@@ -1,0 +1,138 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Module 1 — Course Overview</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/reveal.js@5.1.0/dist/reset.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/reveal.js@5.1.0/dist/reveal.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/reveal.js@5.1.0/dist/theme/white.css">
+<style>
+  :root { --aws-orange:#FF9900; --aws-navy:#232F3E; --aws-blue:#146EB4; }
+  .reveal h1, .reveal h2, .reveal h3 { color: var(--aws-navy); font-weight: 600; letter-spacing: -0.5px; }
+  .reveal h1 { font-size: 2.2em; }
+  .reveal h2 { font-size: 1.5em; }
+  .reveal h3 { font-size: 1.1em; color: var(--aws-blue); }
+  .reveal section { text-align: left; }
+  .reveal section.title-slide { text-align: center; }
+  .reveal .accent { color: var(--aws-orange); }
+  .reveal ul { line-height: 1.5; }
+  .reveal code { background:#f4f4f4; padding:2px 6px; border-radius:4px; color:#c7254e; }
+  .reveal pre code { display:block; padding:10px 14px; font-size:0.65em; line-height:1.35; }
+  .reveal .small { font-size: 0.7em; color:#555; }
+  .reveal .grid { display:grid; grid-template-columns:1fr 1fr 1fr; gap:14px 20px; font-size:0.85em; }
+  .reveal .grid div { border-left:4px solid var(--aws-orange); padding-left:10px; }
+  .reveal section[data-background-color] h2,
+  .reveal section[data-background-color] p,
+  .reveal section[data-background-color] li { color:#fff; }
+  .reveal .lab-tag { display:inline-block; background:#fff; color:var(--aws-navy);
+    padding:6px 14px; border-radius:20px; font-size:0.6em; font-weight:700;
+    letter-spacing:1px; text-transform:uppercase; }
+</style>
+</head>
+<body>
+<div class="reveal"><div class="slides">
+
+<section class="title-slide">
+  <h1>Advanced Developing on AWS</h1>
+  <h3 class="accent">A Three-Day, Architecture-First Workshop</h3>
+  <p class="small">Module 1 — Course Overview</p>
+</section>
+
+<section>
+  <h2>Welcome</h2>
+  <ul>
+    <li>3 days · 7 lab series · one complete serverless microservices system you migrate yourself</li>
+    <li>Audience: developers who already use AWS and want to build <strong>production-grade, cloud-native architectures</strong></li>
+    <li>Lab language: <strong>Python 3</strong> with <code>boto3</code> &amp; <strong>AWS SAM CLI</strong></li>
+    <li>~70% of class time is keyboard time — expect real code, real YAML, real IAM</li>
+  </ul>
+  <p class="small">This is not an introductory course. Familiarity with Python, REST APIs, and basic AWS services is assumed.</p>
+</section>
+
+<section>
+  <h2>The Scenario — Cloud Air</h2>
+  <ul>
+    <li><strong>Cloud Air</strong> is a fictional airline with a monolithic on-premises booking system (Python/Flask on a single EC2 instance, one relational DB)</li>
+    <li>The system is brittle, hard to scale, and impossible to deploy without a full-stack outage</li>
+    <li>Over three days you migrate it: strangler-fig decomposition → Lambda microservices → event-driven resilience</li>
+  </ul>
+  <p class="small">Every lab is a chapter in that story. By Day 3 the monolith is retired; Cloud Air runs entirely on serverless AWS services.</p>
+</section>
+
+<section>
+  <h2>What You Will Build</h2>
+  <div class="grid">
+    <div><strong>IaC Baseline</strong><br><span class="small">CloudFormation stack + Elastic Beanstalk monolith</span></div>
+    <div><strong>Config &amp; Secrets</strong><br><span class="small">SSM Parameter Store + Secrets Manager</span></div>
+    <div><strong>Microservice #1</strong><br><span class="small">Lambda + API Gateway + SAM + Strangler Fig</span></div>
+    <div><strong>Persistence</strong><br><span class="small">DynamoDB single-table + Step Functions saga</span></div>
+    <div><strong>Messaging</strong><br><span class="small">SQS + SNS fan-out + EventBridge bus</span></div>
+    <div><strong>Security &amp; Ops</strong><br><span class="small">Cognito JWT + X-Ray tracing + cleanup</span></div>
+  </div>
+</section>
+
+<section>
+  <h2>Three-Day Shape</h2>
+  <ul>
+    <li><strong>Day 1 — Foundations &amp; Migration.</strong> Cloud journey, Twelve-Factor App, AWS services &amp; IaC, DevOps &amp; CI/CD pipeline. Labs 1–3.</li>
+    <li><strong>Day 2 — Decomposition.</strong> Config, secrets, microservices, Lambda, API Gateway, SAM, Strangler Fig pattern. Labs 4–5.</li>
+    <li><strong>Day 3 — Resilience &amp; Observability.</strong> Polyglot persistence, Step Functions, messaging, event sourcing, CQRS, security, X-Ray. Labs 6–7.</li>
+  </ul>
+  <p class="small">Class runs 09:00–16:00. One-hour lunch, two 15-min breaks. Resource cleanup is part of Lab 7b.</p>
+</section>
+
+<section>
+  <h2>Modules at a Glance</h2>
+  <ul>
+    <li>M1 Course Overview &nbsp;·&nbsp; M2 Cloud Journey &amp; Migration &nbsp;·&nbsp; M3 Twelve-Factor App</li>
+    <li>M4 AWS Services &amp; IaC &nbsp;·&nbsp; M5 DevOps &amp; CI/CD &nbsp;·&nbsp; M6 Config &amp; Secrets</li>
+    <li>M7 Microservices &amp; Serverless &nbsp;·&nbsp; M8 Lambda, API GW &amp; SAM &nbsp;·&nbsp; M9 Strangling the Monolith</li>
+    <li>M10 Polyglot Persistence &amp; DynamoDB &nbsp;·&nbsp; M11 Step Functions</li>
+    <li>M12 Messaging &amp; Decoupling &nbsp;·&nbsp; M13 Event Sourcing &amp; CQRS &amp; Resilience</li>
+    <li>M14 Security &amp; Observability &nbsp;·&nbsp; M15 Course Wrap-up</li>
+  </ul>
+</section>
+
+<section>
+  <h2>Lab Environment</h2>
+  <ul>
+    <li><strong>IDE:</strong> AWS Cloud9 (m5.large · Amazon Linux 2023 · SSH) in <code>us-east-1</code></li>
+    <li><strong>User:</strong> <code>user1</code>, <code>user2</code>, … — instructor assigns yours at the start of Lab 1a</li>
+    <li><strong>Workspace:</strong> <code>~/environment/aws-adv-dev</code> — cloned from the course repo in Lab 1a</li>
+    <li><strong>Env file:</strong> <code>~/.aws-adv-dev.env</code> exports <code>USER_ID</code>, <code>AWS_REGION</code>, <code>ACCT</code></li>
+    <li><strong>All resources</strong> must be prefixed <code>cloudair-userN-*</code> — shared account, no collision</li>
+  </ul>
+  <p class="small">Cloud9 authenticates via the EC2 instance role — no <code>aws configure</code>, no keys on your laptop.</p>
+</section>
+
+<section>
+  <h2>Ground Rules</h2>
+  <ul>
+    <li>Do not touch resources outside your <code>cloudair-userN-*</code> prefix</li>
+    <li><strong>Never hard-code credentials</strong> — all labs use IAM roles or Secrets Manager</li>
+    <li>Region: <code>us-east-1</code> exclusively — the IAM policy will deny other regions</li>
+    <li>Bootstrap scripts (<code>bootstrap.sh &lt;labId&gt;</code>) rebuild prerequisites if you fall behind — no need to panic</li>
+    <li>Cleanup is a first-class step: Lab 7b tears everything down with a CloudFormation delete + checklist</li>
+  </ul>
+</section>
+
+<section>
+  <h2>Introductions — 60 Seconds Each</h2>
+  <ul>
+    <li>Name, role, and current tech stack</li>
+    <li>The most complex AWS architecture you've built or operated</li>
+    <li>One specific thing you want to be able to do differently after this course</li>
+  </ul>
+</section>
+
+<section data-background-color="#146EB4">
+  <h2>Coming Up</h2>
+  <p>Module 2 — The Cloud Journey. We open the Cloud Air codebase and diagnose what's wrong with the monolith before we touch a single line.</p>
+</section>
+
+</div></div>
+<script src="https://cdn.jsdelivr.net/npm/reveal.js@5.1.0/dist/reveal.js"></script>
+<script>Reveal.initialize({ hash: true, slideNumber: 'c/t', transition: 'fade', width: 1280, height: 800, margin: 0.04, minScale: 0.2, maxScale: 2.0 });</script>
+</body>
+</html>

@@ -1,0 +1,37 @@
+[
+  {
+    "_comment": "String parameters — non-sensitive topology / config",
+    "name":        "/cloudair/USER_ID/flights_table",
+    "value":       "Bookings-USER_ID",
+    "type":        "String",
+    "description": "DynamoDB bookings table name. Substitute USER_ID before calling put-parameter.",
+    "example_cli": "aws ssm put-parameter --name /cloudair/$USER_ID/flights_table --value Bookings-$USER_ID --type String --overwrite"
+  },
+  {
+    "name":        "/cloudair/USER_ID/assets_bucket",
+    "value":       "cloudair-USER_ID-assets",
+    "type":        "String",
+    "description": "S3 bucket used to serve static assets. Created by the Lab 2a CloudFormation stack.",
+    "example_cli": "aws ssm put-parameter --name /cloudair/$USER_ID/assets_bucket --value cloudair-$USER_ID-assets --type String --overwrite"
+  },
+  {
+    "name":        "/cloudair/USER_ID/region",
+    "value":       "us-east-1",
+    "type":        "String",
+    "description": "Preferred AWS region for SDK clients. Allows region to be changed without redeploying code.",
+    "example_cli": "aws ssm put-parameter --name /cloudair/$USER_ID/region --value us-east-1 --type String --overwrite"
+  },
+  {
+    "_comment": "SecureString parameter — encrypted at rest with KMS (alias/aws/ssm by default)",
+    "name":        "/cloudair/USER_ID/ext_api_key",
+    "value":       "cloudair-demo-TIMESTAMP",
+    "type":        "SecureString",
+    "description": "Third-party partner API key. Stored as SecureString so the value is never visible in SSM console without explicit KMS Decrypt permission. In Lab 3a the value is set to 'cloudair-demo-<epoch>' for demo purposes.",
+    "example_cli": "aws ssm put-parameter --name /cloudair/$USER_ID/ext_api_key --value '<your-api-key>' --type SecureString --overwrite",
+    "notes": [
+      "To use a customer-managed KMS key instead of the default aws/ssm key, add: --key-id alias/my-app-key",
+      "The --with-decryption flag is required on get-parameter and get-parameters-by-path to receive the plaintext value.",
+      "IAM policies must grant kms:Decrypt on the KMS key as well as ssm:GetParameter(s) on the parameter ARN."
+    ]
+  }
+]

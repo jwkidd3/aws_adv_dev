@@ -1,0 +1,194 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Module 11 — Distributed Complexity &amp; Step Functions</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/reveal.js@5.1.0/dist/reset.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/reveal.js@5.1.0/dist/reveal.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/reveal.js@5.1.0/dist/theme/white.css">
+<style>
+  :root { --aws-orange:#FF9900; --aws-navy:#232F3E; --aws-blue:#146EB4; }
+  .reveal h1, .reveal h2, .reveal h3 { color: var(--aws-navy); font-weight: 600; letter-spacing: -0.5px; }
+  .reveal h1 { font-size: 2.2em; }
+  .reveal h2 { font-size: 1.5em; }
+  .reveal h3 { font-size: 1.1em; color: var(--aws-blue); }
+  .reveal section { text-align: left; }
+  .reveal section.title-slide { text-align: center; }
+  .reveal .accent { color: var(--aws-orange); }
+  .reveal ul { line-height: 1.5; }
+  .reveal code { background:#f4f4f4; padding:2px 6px; border-radius:4px; color:#c7254e; }
+  .reveal pre code { display:block; padding:10px 14px; font-size:0.65em; line-height:1.35; }
+  .reveal .small { font-size: 0.7em; color:#555; }
+  .reveal section[data-background-color] h2,
+  .reveal section[data-background-color] p,
+  .reveal section[data-background-color] li { color:#fff; }
+  .reveal .lab-tag { display:inline-block; background:#fff; color:var(--aws-navy);
+    padding:6px 14px; border-radius:20px; font-size:0.6em; font-weight:700;
+    letter-spacing:1px; text-transform:uppercase; }
+</style>
+</head>
+<body>
+<div class="reveal"><div class="slides">
+
+<section class="title-slide">
+  <h1>Module 11</h1>
+  <h3 class="accent">Distributed Complexity &amp; Step Functions</h3>
+  <p class="small">Orchestrating the Cloud Air booking flow without distributed spaghetti.</p>
+</section>
+
+<section>
+  <h2>Why Distributed Systems Are Hard</h2>
+  <ul>
+    <li><strong>Partial failure</strong> — any node can fail independently; the system must cope</li>
+    <li><strong>Network partitions</strong> — messages arrive out of order, duplicated, or not at all</li>
+    <li><strong>Distributed transactions</strong> — two-phase commit doesn't scale in microservices</li>
+    <li><strong>Observability gaps</strong> — a chain of Lambda invocations has no built-in audit trail</li>
+    <li><strong>State sprawl</strong> — each service tracking "where are we in the workflow?" leads to drift</li>
+  </ul>
+  <p class="small">The Cloud Air booking flow (search → hold → pay → confirm → notify) spans 5 services — a canonical distributed-complexity problem.</p>
+</section>
+
+<section>
+  <h2>The Saga Pattern</h2>
+  <ul>
+    <li>Replaces a distributed ACID transaction with a sequence of local transactions, each publishing an event</li>
+    <li>On failure: <strong>compensating transactions</strong> undo earlier steps (release held seat, void payment)</li>
+    <li>Two variants: <strong>Choreography</strong> (event-driven, each service reacts) vs <strong>Orchestration</strong> (central coordinator drives the flow)</li>
+  </ul>
+  <p class="small">Choreography scales well but debug complexity grows with step count. Orchestration trades some autonomy for an explicit, inspectable execution record — the sweet spot for booking workflows.</p>
+</section>
+
+<section>
+  <h2>AWS Step Functions</h2>
+  <ul>
+    <li>Fully managed <strong>orchestration service</strong> — state machines defined in Amazon States Language (ASL)</li>
+    <li><strong>Standard Workflows</strong> — exactly-once, auditable, up to 1 year; suitable for bookings</li>
+    <li><strong>Express Workflows</strong> — at-least-once, high throughput, up to 5 min; suitable for streaming ingestion</li>
+    <li>Native integrations: Lambda, DynamoDB, SQS, SNS, ECS, SageMaker, EventBridge — no glue code</li>
+    <li>Visual debugger in the console shows exactly which state failed and its I/O</li>
+  </ul>
+</section>
+
+<section>
+  <h2>ASL: Amazon States Language</h2>
+  <pre><code class="language-json">{
+  "Comment": "CloudAir booking saga",
+  "StartAt": "HoldSeat",
+  "States": {
+    "HoldSeat": {
+      "Type": "Task",
+      "Resource": "arn:aws:lambda:us-east-1:ACCT:function:cloudair-$USER_ID-hold",
+      "Next": "ProcessPayment",
+      "Catch": [{ "ErrorEquals": ["States.ALL"], "Next": "ReleaseSeat" }]
+    },
+    "ProcessPayment": {
+      "Type": "Task",
+      "Resource": "arn:aws:lambda:us-east-1:ACCT:function:cloudair-$USER_ID-pay",
+      "Next": "ConfirmBooking",
+      "Retry": [{ "ErrorEquals": ["PaymentTimeout"], "MaxAttempts": 2, "IntervalSeconds": 3 }]
+    },
+    "ConfirmBooking": { "Type": "Task",
+      "Resource": "arn:aws:lambda:us-east-1:ACCT:function:cloudair-$USER_ID-confirm",
+      "End": true }
+  }
+}</code></pre>
+  <p class="small"><code>Catch</code> enables compensating transactions; <code>Retry</code> handles transient failures before giving up.</p>
+</section>
+
+<section>
+  <h2>State Types at a Glance</h2>
+  <ul>
+    <li><strong>Task</strong> — invoke a Lambda, SDK integration, or HTTP endpoint</li>
+    <li><strong>Choice</strong> — conditional branching on input JSON values</li>
+    <li><strong>Parallel</strong> — fan-out concurrent branches; merge all outputs</li>
+    <li><strong>Map</strong> — iterate over an array of items, running the same branch per item</li>
+    <li><strong>Wait</strong> — pause until a timestamp or duration (no Lambda idling)</li>
+    <li><strong>Pass / Succeed / Fail</strong> — flow control and terminal states</li>
+  </ul>
+  <p class="small"><code>Map</code> + <code>Parallel</code> replace hand-rolled <code>asyncio</code>/<code>concurrent.futures</code> fan-out patterns.</p>
+</section>
+
+<section>
+  <h2>SDK Integrations — No Lambda Glue Needed</h2>
+  <pre><code class="language-json">"NotifyPassenger": {
+  "Type": "Task",
+  "Resource": "arn:aws:states:::sns:publish",
+  "Parameters": {
+    "TopicArn": "arn:aws:sns:us-east-1:ACCT:cloudair-$USER_ID-notify",
+    "Message.$": "States.Format('Booking {} confirmed', $.bookingId)"
+  },
+  "Next": "Done"
+}</code></pre>
+  <p class="small">Optimistic SDK integrations (the <code>arn:aws:states:::service:action</code> form) call the AWS API directly — no Lambda invocation cost, no cold starts.</p>
+</section>
+
+<section>
+  <h2>Orchestration vs Choreography</h2>
+  <ul>
+    <li><strong>Orchestration</strong> — Step Functions holds state; audit trail is free; easy to debug and replay</li>
+    <li><strong>Choreography</strong> — each service reacts to events; loose coupling; harder to trace across services</li>
+    <li>Hybrid is common: Step Functions orchestrates within a bounded context; EventBridge choreographs between contexts</li>
+    <li>Cloud Air uses both: Step Functions owns the booking saga; EventBridge fires domain events (booking.confirmed) to downstream systems</li>
+  </ul>
+</section>
+
+<section>
+  <h2>Starting &amp; Monitoring Executions</h2>
+  <pre><code class="language-bash"># Start an execution
+aws stepfunctions start-execution \
+  --state-machine-arn arn:aws:states:us-east-1:$ACCT:stateMachine:cloudair-$USER_ID-booking \
+  --input '{"flightId":"CA-404","passengerId":"u42","seats":1}'
+
+# List running executions
+aws stepfunctions list-executions \
+  --state-machine-arn arn:aws:states:us-east-1:$ACCT:stateMachine:cloudair-$USER_ID-booking \
+  --status-filter RUNNING
+
+# Describe execution history (audit trail)
+aws stepfunctions get-execution-history \
+  --execution-arn arn:aws:states:us-east-1:$ACCT:execution:cloudair-$USER_ID-booking:exec-1</code></pre>
+</section>
+
+<section>
+  <h2>Step Functions + SAM</h2>
+  <pre><code class="language-yaml">BookingStateMachine:
+  Type: AWS::Serverless::StateMachine
+  Properties:
+    DefinitionUri: statemachine/booking.asl.json
+    DefinitionSubstitutions:
+      HoldFunctionArn: !GetAtt HoldSeatFunction.Arn
+      PayFunctionArn:  !GetAtt ProcessPaymentFunction.Arn
+    Policies:
+      - LambdaInvokePolicy:
+          FunctionName: !Ref HoldSeatFunction
+      - LambdaInvokePolicy:
+          FunctionName: !Ref ProcessPaymentFunction
+    Logging:
+      Destinations: [{ CloudWatchLogsLogGroup: { LogGroupArn: !GetAtt SFNLogGroup.Arn } }]
+      Level: ALL</code></pre>
+  <p class="small">SAM substitutions inject Lambda ARNs into the ASL at deploy time — keep ASL portable across environments.</p>
+</section>
+
+<section data-background-color="#FF9900">
+  <span class="lab-tag">Hands-On Lab Block · 45 min</span>
+  <h2>🧪 Lab 5b — Step Functions Booking Saga</h2>
+  <ul>
+    <li>Deploy the <code>cloudair-$USER_ID-booking</code> state machine via SAM</li>
+    <li>Trigger an execution from the CLI; observe the visual graph in the console</li>
+    <li>Inject a payment failure and verify the <code>ReleaseSeat</code> compensating branch fires</li>
+    <li>Inspect execution history and CloudWatch Logs for the full audit trail</li>
+  </ul>
+  <p class="small"><code>labs/lab5b-stepfunctions.md</code></p>
+</section>
+
+<section data-background-color="#146EB4">
+  <h2>Coming Up</h2>
+  <p>Module 12 — Decentralized Data &amp; Messaging. SQS, SNS, Kinesis, and EventBridge decouple Cloud Air's services so failures don't cascade.</p>
+</section>
+
+</div></div>
+<script src="https://cdn.jsdelivr.net/npm/reveal.js@5.1.0/dist/reveal.js"></script>
+<script>Reveal.initialize({ hash: true, slideNumber: 'c/t', transition: 'fade', width: 1280, height: 800, margin: 0.04, minScale: 0.2, maxScale: 2.0 });</script>
+</body>
+</html>

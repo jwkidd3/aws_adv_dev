@@ -1,0 +1,190 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Module 5 — Gaining Agility: DevOps &amp; CI/CD</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/reveal.js@5.1.0/dist/reset.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/reveal.js@5.1.0/dist/reveal.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/reveal.js@5.1.0/dist/theme/white.css">
+<style>
+  :root { --aws-orange:#FF9900; --aws-navy:#232F3E; --aws-blue:#146EB4; }
+  .reveal h1, .reveal h2, .reveal h3 { color: var(--aws-navy); font-weight: 600; letter-spacing: -0.5px; }
+  .reveal h1 { font-size: 2.2em; }
+  .reveal h2 { font-size: 1.5em; }
+  .reveal h3 { font-size: 1.1em; color: var(--aws-blue); }
+  .reveal section { text-align: left; }
+  .reveal section.title-slide { text-align: center; }
+  .reveal .accent { color: var(--aws-orange); }
+  .reveal ul { line-height: 1.5; }
+  .reveal code { background:#f4f4f4; padding:2px 6px; border-radius:4px; color:#c7254e; }
+  .reveal pre code { display:block; padding:10px 14px; font-size:0.65em; line-height:1.35; }
+  .reveal .small { font-size: 0.7em; color:#555; }
+  .reveal .grid2 { display:grid; grid-template-columns:1fr 1fr; gap:14px 24px; font-size:0.85em; }
+  .reveal .grid2 div { border-left:4px solid var(--aws-orange); padding-left:10px; }
+  .reveal section[data-background-color] h2,
+  .reveal section[data-background-color] p,
+  .reveal section[data-background-color] li { color:#fff; }
+  .reveal .lab-tag { display:inline-block; background:#fff; color:var(--aws-navy);
+    padding:6px 14px; border-radius:20px; font-size:0.6em; font-weight:700;
+    letter-spacing:1px; text-transform:uppercase; }
+</style>
+</head>
+<body>
+<div class="reveal"><div class="slides">
+
+<section class="title-slide">
+  <h1>Module 5</h1>
+  <h3 class="accent">Gaining Agility: DevOps &amp; CI/CD</h3>
+  <p class="small">Culture, practices, and the AWS toolchain that makes Cloud Air deployments safe, fast, and repeatable.</p>
+</section>
+
+<section>
+  <h2>DevOps Is Not a Team Name</h2>
+  <ul>
+    <li>DevOps is a <strong>culture and set of practices</strong> that unite development and operations around shared ownership of the delivery lifecycle</li>
+    <li>Core pillars: <strong>flow</strong> (small batches, short cycles), <strong>feedback</strong> (fast detection of issues), <strong>continual learning</strong> (blameless postmortems, improvement loops)</li>
+    <li>Cloud Air's pre-migration process: quarterly releases, siloed ops team, no automated tests — the opposite of DevOps</li>
+    <li>Target: multiple deployments per day; every PR is a potential production release</li>
+  </ul>
+  <p class="small">AWS CI/CD services are the technical enablers. The culture change is harder and must come first — the pipeline is the contractual expression of the team's commitments.</p>
+</section>
+
+<section>
+  <h2>CI/CD Pipeline Stages</h2>
+  <ul>
+    <li><strong>Source</strong> — code commit triggers the pipeline; artefact stored in S3; version immutable</li>
+    <li><strong>Build</strong> — compile, package, run unit tests, produce deployment artefact; no manual steps</li>
+    <li><strong>Test</strong> — integration tests, security scanning (SAST), dependency vulnerability check</li>
+    <li><strong>Deploy (staging)</strong> — automated deploy to a production-parity environment; smoke tests run automatically</li>
+    <li><strong>Approval</strong> — optional manual gate (only for production in regulated contexts)</li>
+    <li><strong>Deploy (production)</strong> — rolling or blue/green deploy; automated rollback on CloudWatch alarm breach</li>
+  </ul>
+  <p class="small">The pipeline is code (stored in the same repo as the application). Changing the pipeline requires the same review process as changing the application.</p>
+</section>
+
+<section>
+  <h2>AWS CodeCommit</h2>
+  <ul>
+    <li>Fully managed Git hosting in AWS — IAM-authenticated, no SSH key management needed</li>
+    <li>Triggers on push events feed directly into CodePipeline source stages</li>
+    <li>Pull request approval rules integrate with IAM — enforce review gates without third-party tools</li>
+    <li>For Cloud Air: one repo per service post-decomposition; one repo for shared IaC templates</li>
+  </ul>
+  <pre><code># Configure CodeCommit credential helper — uses AWS STS tokens
+git config --global credential.helper \
+  '!aws codecommit credential-helper $@'
+git config --global credential.UseHttpPath true
+
+# Clone the Cloud Air monolith repo
+git clone https://git-codecommit.us-east-1.amazonaws.com/v1/repos/\
+cloudair-${USER_ID}-monolith</code></pre>
+</section>
+
+<section>
+  <h2>AWS CodeBuild</h2>
+  <ul>
+    <li>Managed build service — no Jenkins servers to patch, no build agents to scale</li>
+    <li>Build spec in <code>buildspec.yml</code> at the repo root — version-controlled alongside the code</li>
+    <li>Environment: Docker image (AWS standard or custom ECR image); ephemeral per build</li>
+    <li>IAM role scoped to the minimum permissions the build needs — not admin</li>
+  </ul>
+  <pre><code>version: 0.2
+phases:
+  install:
+    runtime-versions:
+      python: 3.11
+    commands:
+      - pip install -r requirements.txt
+  build:
+    commands:
+      - python -m pytest tests/unit -v
+      - pip install --target dist/ -r requirements.txt
+      - cp -r src/ dist/
+artifacts:
+  files: ["dist/**/*", "appspec.yml"]
+  discard-paths: no</code></pre>
+</section>
+
+<section>
+  <h2>AWS CodeDeploy</h2>
+  <ul>
+    <li>Automates application deployments to EC2, Beanstalk, Lambda, and ECS</li>
+    <li>Deployment strategies: <strong>In-place</strong> (rolling), <strong>Blue/Green</strong> (swap traffic after validation), <strong>Canary/Linear</strong> (shift Lambda traffic incrementally)</li>
+    <li><code>appspec.yml</code> defines lifecycle hooks: <code>BeforeInstall</code>, <code>AfterInstall</code>, <code>ValidateService</code></li>
+    <li>Automatic rollback on CloudWatch alarm or hook failure — no human needed at 2 AM</li>
+  </ul>
+  <pre><code>version: 0.0
+os: linux
+files:
+  - source: /dist
+    destination: /var/app/current
+hooks:
+  AfterInstall:
+    - location: scripts/restart_app.sh
+      timeout: 60
+  ValidateService:
+    - location: scripts/health_check.sh
+      timeout: 30</code></pre>
+</section>
+
+<section>
+  <h2>AWS CodePipeline</h2>
+  <ul>
+    <li>Orchestrates the full CI/CD workflow — connects Source → Build → Test → Deploy as a directed graph</li>
+    <li>Each stage produces and consumes artefacts via S3; stages run sequentially; parallel actions within a stage are supported</li>
+    <li>Native integrations: CodeCommit, CodeBuild, CodeDeploy, Elastic Beanstalk, CloudFormation, Lambda, ECS, manual approval actions</li>
+    <li>Pipeline definition is itself a CloudFormation resource — IaC for your IaC pipeline</li>
+  </ul>
+  <pre><code># Trigger a pipeline execution manually (useful after infra changes)
+aws codepipeline start-pipeline-execution \
+  --name cloudair-${USER_ID}-pipeline
+
+# View the latest execution state
+aws codepipeline get-pipeline-state \
+  --name cloudair-${USER_ID}-pipeline \
+  --query "stageStates[*].{Stage:stageName,Status:latestExecution.status}"</code></pre>
+</section>
+
+<section>
+  <h2>Cloud Air Pipeline Architecture</h2>
+  <div class="grid2">
+    <div><strong>Source stage</strong><br><span class="small">CodeCommit push to <code>main</code> triggers pipeline; artefact version locked in S3</span></div>
+    <div><strong>Build stage</strong><br><span class="small">CodeBuild: pytest unit tests → package to zip → SAM build for Lambda services</span></div>
+    <div><strong>Deploy-staging stage</strong><br><span class="small">CloudFormation change set execute; Beanstalk rolling deploy; smoke test Lambda invocation</span></div>
+    <div><strong>Deploy-prod stage</strong><br><span class="small">Blue/green on Beanstalk for monolith; CodeDeploy linear-10-percent canary for Lambda functions</span></div>
+  </div>
+  <p class="small">The pipeline is defined in <code>labs/files/lab3/pipeline.yaml</code> and deployed as a CloudFormation stack — the pipeline manages itself after the first <code>aws cloudformation deploy</code>.</p>
+</section>
+
+<section>
+  <h2>Deployment Strategies Compared</h2>
+  <ul>
+    <li><strong>All-at-once:</strong> fastest; full downtime risk. Acceptable only for non-production environments.</li>
+    <li><strong>Rolling:</strong> replaces instances in batches; reduced capacity during deploy; no extra cost. Good default for Beanstalk.</li>
+    <li><strong>Blue/Green:</strong> fully parallel environments; instant cutover; easy rollback; doubles cost during deploy window. Required for zero-downtime releases.</li>
+    <li><strong>Canary / Linear (Lambda):</strong> traffic shifts by percentage over time; CloudWatch alarms auto-rollback on elevated error rate. Best for serverless where "instance" cost is irrelevant.</li>
+  </ul>
+  <p class="small">Cloud Air commitment: the booking service never has &gt;30 s of downtime during a deploy. Blue/Green on the ALB is the only strategy that guarantees this.</p>
+</section>
+
+<section data-background-color="#FF9900">
+  <span class="lab-tag">Hands-On Lab Block · 2 × ~40 min</span>
+  <h2>🧪 Labs 3a · 3b</h2>
+  <ul>
+    <li><strong>3a — SSM Parameter Store Config.</strong> Migrate Cloud Air's hardcoded configuration values to SSM Parameter Store (Standard tier). Update the Flask app to read from SSM at startup; redeploy via Beanstalk. Verify with <code>aws ssm get-parameters-by-path</code>.</li>
+    <li><strong>3b — Secrets Manager + Rotation.</strong> Move the DB credential to Secrets Manager; enable automatic rotation with a Lambda rotator. Update the application to call <code>get_secret_value</code>; verify the rotation lifecycle in the console and via CloudTrail.</li>
+  </ul>
+  <p class="small"><code>labs/lab3a-parameter-store.md · lab3b-secrets-manager.md</code></p>
+</section>
+
+<section data-background-color="#146EB4">
+  <h2>Coming Up</h2>
+  <p>Module 6 — Application Configuration &amp; Secrets Management. We go deep on SSM Parameter Store and Secrets Manager — the same services the pipeline and the application both depend on for safe, auditable configuration.</p>
+</section>
+
+</div></div>
+<script src="https://cdn.jsdelivr.net/npm/reveal.js@5.1.0/dist/reveal.js"></script>
+<script>Reveal.initialize({ hash: true, slideNumber: 'c/t', transition: 'fade', width: 1280, height: 800, margin: 0.04, minScale: 0.2, maxScale: 2.0 });</script>
+</body>
+</html>

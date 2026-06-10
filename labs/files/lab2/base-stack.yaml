@@ -1,0 +1,155 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: >
+  Cloud Air Baseline Stack — shared infrastructure for the Cloud Air
+  refactor labs. Creates per-student S3 bucket, DynamoDB Bookings table,
+  and SSM parameters used by later labs.
+
+Parameters:
+  UserId:
+    Type: String
+    Description: Student user ID (e.g. user1). Used to namespace all resources.
+    AllowedPattern: "^user[0-9]+"
+    ConstraintDescription: Must be of the form userN (e.g. user1, user12).
+
+  Environment:
+    Type: String
+    Default: dev
+    AllowedValues: [dev, test, prod]
+    Description: Deployment environment tag.
+
+Resources:
+
+  # ── S3 bucket for Cloud Air static assets ──────────────────────────────────
+  StaticAssetsBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub "cloudair-${UserId}-assets"
+      VersioningConfiguration:
+        Status: Enabled
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      LifecycleConfiguration:
+        Rules:
+          - Id: ExpireOldVersions
+            Status: Enabled
+            NoncurrentVersionExpirationInDays: 30
+      Tags:
+        - Key: Project
+          Value: CloudAir
+        - Key: Owner
+          Value: !Ref UserId
+        - Key: Environment
+          Value: !Ref Environment
+
+  # ── DynamoDB table for flight bookings ─────────────────────────────────────
+  BookingsTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub "Bookings-${UserId}"
+      BillingMode: PAY_PER_REQUEST
+      TableClass: STANDARD
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: true
+      AttributeDefinitions:
+        - AttributeName: bookingId
+          AttributeType: S
+        - AttributeName: userId
+          AttributeType: S
+      KeySchema:
+        - AttributeName: bookingId
+          KeyType: HASH
+      GlobalSecondaryIndexes:
+        - IndexName: userId-index
+          KeySchema:
+            - AttributeName: userId
+              KeyType: HASH
+          Projection:
+            ProjectionType: ALL
+      StreamSpecification:
+        StreamViewType: NEW_AND_OLD_IMAGES
+      Tags:
+        - Key: Project
+          Value: CloudAir
+        - Key: Owner
+          Value: !Ref UserId
+        - Key: Environment
+          Value: !Ref Environment
+
+  # ── SSM Parameters used by the running app ─────────────────────────────────
+  SsmParamBucketName:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: !Sub "/cloudair/${UserId}/assets-bucket"
+      Type: String
+      Value: !Ref StaticAssetsBucket
+      Description: Name of the Cloud Air static-assets S3 bucket for this student.
+      Tags:
+        Project: CloudAir
+        Owner: !Ref UserId
+
+  SsmParamTableName:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: !Sub "/cloudair/${UserId}/bookings-table"
+      Type: String
+      Value: !Ref BookingsTable
+      Description: Name of the Cloud Air DynamoDB Bookings table for this student.
+      Tags:
+        Project: CloudAir
+        Owner: !Ref UserId
+
+  SsmParamEnvironment:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: !Sub "/cloudair/${UserId}/environment"
+      Type: String
+      Value: !Ref Environment
+      Description: Deployment environment (dev/test/prod) for this student's Cloud Air stack.
+      Tags:
+        Project: CloudAir
+        Owner: !Ref UserId
+
+Outputs:
+
+  StaticAssetsBucketName:
+    Description: S3 bucket holding Cloud Air static assets
+    Value: !Ref StaticAssetsBucket
+    Export:
+      Name: !Sub "cloudair-${UserId}-assets-bucket"
+
+  StaticAssetsBucketArn:
+    Description: ARN of the static-assets S3 bucket
+    Value: !GetAtt StaticAssetsBucket.Arn
+    Export:
+      Name: !Sub "cloudair-${UserId}-assets-bucket-arn"
+
+  BookingsTableName:
+    Description: DynamoDB table name for Cloud Air bookings
+    Value: !Ref BookingsTable
+    Export:
+      Name: !Sub "cloudair-${UserId}-bookings-table"
+
+  BookingsTableArn:
+    Description: ARN of the DynamoDB Bookings table
+    Value: !GetAtt BookingsTable.Arn
+    Export:
+      Name: !Sub "cloudair-${UserId}-bookings-table-arn"
+
+  BookingsTableStreamArn:
+    Description: DynamoDB Streams ARN (used by later event-driven labs)
+    Value: !GetAtt BookingsTable.StreamArn
+    Export:
+      Name: !Sub "cloudair-${UserId}-bookings-stream-arn"
+
+  SsmPathPrefix:
+    Description: SSM Parameter Store path prefix for this student's config
+    Value: !Sub "/cloudair/${UserId}"
+    Export:
+      Name: !Sub "cloudair-${UserId}-ssm-prefix"

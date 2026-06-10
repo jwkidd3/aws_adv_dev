@@ -1,0 +1,9 @@
+# Lambda runtime (python3.12) already includes boto3 and botocore.
+# List it here explicitly so `sam build` resolves a consistent version
+# and so local development environments (pip install -r requirements.txt)
+# get the same package.
+boto3>=1.34.0
+
+# No other runtime dependencies — keep the deployment package minimal.
+# If you add aws-lambda-powertools for structured logging / tracing, uncomment:
+# aws-lambda-powertools>=2.38.0

@@ -1,0 +1,179 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Transform: AWS::Serverless-2016-10-31
+
+Description: >
+  Cloud Air booking saga — Lab 5b.
+  Deploys four Lambda stub functions and the Step Functions state machine.
+
+Parameters:
+  UserId:
+    Type: String
+    Description: Student user ID (e.g. user1) — scopes all resource names.
+
+Globals:
+  Function:
+    Runtime: python3.12
+    Handler: handlers.reserve_seat   # overridden per resource
+    CodeUri: .
+    Timeout: 10
+    MemorySize: 128
+    Environment:
+      Variables:
+        USER_ID: !Ref UserId
+
+Resources:
+
+  # -------------------------------------------------------------------------
+  # Lambda stubs
+  # -------------------------------------------------------------------------
+
+  ReserveSeatFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub "cloudair-${UserId}-reserve-seat"
+      Handler: handlers.reserve_seat
+      Description: "Stub: reserve a seat on a CloudAir flight"
+
+  ChargePaymentFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub "cloudair-${UserId}-charge-payment"
+      Handler: handlers.charge_payment
+      Description: "Stub: charge the customer for a booking"
+
+  ConfirmBookingFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub "cloudair-${UserId}-confirm-booking"
+      Handler: handlers.confirm_booking
+      Description: "Stub: write the confirmed booking record"
+
+  CancelReservationFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub "cloudair-${UserId}-cancel-reservation"
+      Handler: handlers.cancel_reservation
+      Description: "Compensating transaction: release seat hold"
+
+  # -------------------------------------------------------------------------
+  # IAM role for the state machine
+  # -------------------------------------------------------------------------
+
+  StateMachineRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub "cloudair-${UserId}-sfn-role"
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: states.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: InvokeSagaLambdas
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action: lambda:InvokeFunction
+                Resource:
+                  - !GetAtt ReserveSeatFunction.Arn
+                  - !GetAtt ChargePaymentFunction.Arn
+                  - !GetAtt ConfirmBookingFunction.Arn
+                  - !GetAtt CancelReservationFunction.Arn
+
+  # -------------------------------------------------------------------------
+  # Step Functions state machine — booking saga
+  # -------------------------------------------------------------------------
+
+  BookingSagaStateMachine:
+    Type: AWS::StepFunctions::StateMachine
+    Properties:
+      StateMachineName: !Sub "cloudair-${UserId}-booking-saga"
+      RoleArn: !GetAtt StateMachineRole.Arn
+      DefinitionString:
+        Fn::Sub:
+          - |
+            {
+              "Comment": "Cloud Air booking saga",
+              "StartAt": "ReserveSeat",
+              "States": {
+                "ReserveSeat": {
+                  "Type": "Task",
+                  "Resource": "arn:aws:states:::lambda:invoke",
+                  "Parameters": {
+                    "FunctionName": "${ReserveSeatArn}",
+                    "Payload.$": "$"
+                  },
+                  "ResultPath": "$.reservationResult",
+                  "Retry": [{"ErrorEquals": ["Lambda.ServiceException","Lambda.AWSLambdaException"], "IntervalSeconds": 2, "MaxAttempts": 2, "BackoffRate": 2}],
+                  "Catch": [{"ErrorEquals": ["SeatUnavailableError","States.ALL"], "ResultPath": "$.error", "Next": "BookingFailed"}],
+                  "Next": "ChargePayment"
+                },
+                "ChargePayment": {
+                  "Type": "Task",
+                  "Resource": "arn:aws:states:::lambda:invoke",
+                  "Parameters": {
+                    "FunctionName": "${ChargePaymentArn}",
+                    "Payload.$": "$"
+                  },
+                  "ResultPath": "$.paymentResult",
+                  "Retry": [{"ErrorEquals": ["Lambda.ServiceException","Lambda.AWSLambdaException"], "IntervalSeconds": 2, "MaxAttempts": 2, "BackoffRate": 2}],
+                  "Catch": [{"ErrorEquals": ["PaymentDeclinedError","States.ALL"], "ResultPath": "$.error", "Next": "CancelReservation"}],
+                  "Next": "ConfirmBooking"
+                },
+                "ConfirmBooking": {
+                  "Type": "Task",
+                  "Resource": "arn:aws:states:::lambda:invoke",
+                  "Parameters": {
+                    "FunctionName": "${ConfirmBookingArn}",
+                    "Payload.$": "$"
+                  },
+                  "ResultPath": "$.confirmResult",
+                  "Retry": [{"ErrorEquals": ["Lambda.ServiceException","Lambda.AWSLambdaException"], "IntervalSeconds": 2, "MaxAttempts": 3, "BackoffRate": 2}],
+                  "Catch": [{"ErrorEquals": ["States.ALL"], "ResultPath": "$.error", "Next": "CancelReservation"}],
+                  "Next": "BookingConfirmed"
+                },
+                "CancelReservation": {
+                  "Type": "Task",
+                  "Resource": "arn:aws:states:::lambda:invoke",
+                  "Parameters": {
+                    "FunctionName": "${CancelReservationArn}",
+                    "Payload.$": "$"
+                  },
+                  "ResultPath": "$.cancelResult",
+                  "Retry": [{"ErrorEquals": ["Lambda.ServiceException","Lambda.AWSLambdaException"], "IntervalSeconds": 5, "MaxAttempts": 3, "BackoffRate": 2}],
+                  "Next": "BookingFailed"
+                },
+                "BookingConfirmed": {"Type": "Succeed"},
+                "BookingFailed": {
+                  "Type": "Fail",
+                  "Error": "BookingFailed",
+                  "Cause": "Booking workflow terminated — see $.error for details"
+                }
+              }
+            }
+          - ReserveSeatArn:       !GetAtt ReserveSeatFunction.Arn
+            ChargePaymentArn:     !GetAtt ChargePaymentFunction.Arn
+            ConfirmBookingArn:    !GetAtt ConfirmBookingFunction.Arn
+            CancelReservationArn: !GetAtt CancelReservationFunction.Arn
+
+Outputs:
+  StateMachineArn:
+    Description: "ARN of the booking saga state machine"
+    Value: !Ref BookingSagaStateMachine
+    Export:
+      Name: !Sub "cloudair-${UserId}-booking-saga-arn"
+
+  ReserveSeatFunctionArn:
+    Value: !GetAtt ReserveSeatFunction.Arn
+
+  ChargePaymentFunctionArn:
+    Value: !GetAtt ChargePaymentFunction.Arn
+
+  ConfirmBookingFunctionArn:
+    Value: !GetAtt ConfirmBookingFunction.Arn
+
+  CancelReservationFunctionArn:
+    Value: !GetAtt CancelReservationFunction.Arn

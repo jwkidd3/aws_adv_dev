@@ -1,0 +1,209 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Module 4 — AWS Services, Interfacing &amp; Infrastructure as Code</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/reveal.js@5.1.0/dist/reset.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/reveal.js@5.1.0/dist/reveal.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/reveal.js@5.1.0/dist/theme/white.css">
+<style>
+  :root { --aws-orange:#FF9900; --aws-navy:#232F3E; --aws-blue:#146EB4; }
+  .reveal h1, .reveal h2, .reveal h3 { color: var(--aws-navy); font-weight: 600; letter-spacing: -0.5px; }
+  .reveal h1 { font-size: 2.2em; }
+  .reveal h2 { font-size: 1.5em; }
+  .reveal h3 { font-size: 1.1em; color: var(--aws-blue); }
+  .reveal section { text-align: left; }
+  .reveal section.title-slide { text-align: center; }
+  .reveal .accent { color: var(--aws-orange); }
+  .reveal ul { line-height: 1.5; }
+  .reveal code { background:#f4f4f4; padding:2px 6px; border-radius:4px; color:#c7254e; }
+  .reveal pre code { display:block; padding:10px 14px; font-size:0.65em; line-height:1.35; }
+  .reveal .small { font-size: 0.7em; color:#555; }
+  .reveal .grid2 { display:grid; grid-template-columns:1fr 1fr; gap:14px 24px; font-size:0.85em; }
+  .reveal .grid2 div { border-left:4px solid var(--aws-orange); padding-left:10px; }
+  .reveal section[data-background-color] h2,
+  .reveal section[data-background-color] p,
+  .reveal section[data-background-color] li { color:#fff; }
+  .reveal .lab-tag { display:inline-block; background:#fff; color:var(--aws-navy);
+    padding:6px 14px; border-radius:20px; font-size:0.6em; font-weight:700;
+    letter-spacing:1px; text-transform:uppercase; }
+</style>
+</head>
+<body>
+<div class="reveal"><div class="slides">
+
+<section class="title-slide">
+  <h1>Module 4</h1>
+  <h3 class="accent">AWS Services, Interfacing &amp; Infrastructure as Code</h3>
+  <p class="small">Service overview, CLI/SDK/API access patterns, authentication, and deploying the Cloud Air baseline with CloudFormation and Elastic Beanstalk.</p>
+</section>
+
+<section>
+  <h2>AWS Service Landscape for Cloud Air</h2>
+  <ul>
+    <li><strong>Compute:</strong> EC2, Lambda, Elastic Beanstalk, ECS/Fargate</li>
+    <li><strong>Networking:</strong> VPC, ALB, API Gateway, Route 53, CloudFront</li>
+    <li><strong>Storage &amp; Data:</strong> S3, DynamoDB, RDS Aurora, ElastiCache</li>
+    <li><strong>Messaging:</strong> SQS, SNS, EventBridge, Kinesis</li>
+    <li><strong>Developer Tools:</strong> CodeCommit, CodeBuild, CodeDeploy, CodePipeline, Cloud9</li>
+    <li><strong>Operations:</strong> CloudWatch, X-Ray, CloudTrail, AWS Config, Systems Manager</li>
+    <li><strong>IaC:</strong> CloudFormation, CDK, SAM</li>
+  </ul>
+  <p class="small">This module focuses on the interfacing layer and the IaC tooling. Service-specific deep dives happen in later modules.</p>
+</section>
+
+<section>
+  <h2>Three Ways to Interface with AWS</h2>
+  <ul>
+    <li><strong>Console</strong> — rapid exploration and one-off operations. Never the source of truth for production infrastructure.</li>
+    <li><strong>AWS CLI</strong> — scriptable; every service operation is a subcommand. Integrates into CI/CD pipelines and shell scripts.</li>
+    <li><strong>SDK (boto3)</strong> — full programmatic control; paginators, waiters, event system. What your application code uses.</li>
+  </ul>
+  <pre><code># CLI: describe a stack
+aws cloudformation describe-stacks \
+  --stack-name cloudair-${USER_ID}-base \
+  --query "Stacks[0].StackStatus"
+
+# SDK equivalent
+import boto3, os
+cf = boto3.client("cloudformation")
+status = cf.describe_stacks(
+    StackName=f"cloudair-{os.environ['USER_ID']}-base"
+)["Stacks"][0]["StackStatus"]</code></pre>
+</section>
+
+<section>
+  <h2>Authentication &amp; the Credential Provider Chain</h2>
+  <ol>
+    <li>Explicit credentials passed to <code>boto3.client()</code> — never do this in application code</li>
+    <li><code>AWS_ACCESS_KEY_ID</code> / <code>AWS_SECRET_ACCESS_KEY</code> env vars</li>
+    <li>Named profile in <code>~/.aws/credentials</code> (selected via <code>AWS_PROFILE</code>)</li>
+    <li>Container/EC2/Lambda <strong>execution role</strong> — what Cloud9 and Lambda use ← <em>always prefer this</em></li>
+  </ol>
+  <p class="small">Instance roles deliver time-limited STS tokens that rotate automatically. This is how the Cloud Air application authenticates to every AWS service: no long-term credentials stored anywhere.</p>
+</section>
+
+<section>
+  <h2>Infrastructure as Code — Why It Matters</h2>
+  <div class="grid2">
+    <div><strong>Repeatability</strong><br><span class="small">The same template deployed 50 times produces identical infrastructure — critical for multi-region disaster recovery</span></div>
+    <div><strong>Auditability</strong><br><span class="small">Every infrastructure change is a Git commit; who changed what and when is always traceable</span></div>
+    <div><strong>Drift detection</strong><br><span class="small">CloudFormation tracks declared vs actual state; <code>DRIFTED</code> resources are flagged automatically</span></div>
+    <div><strong>Cost &amp; compliance</strong><br><span class="small">Templates are the enforcement point for tagging policies, encryption, and network isolation standards</span></div>
+  </div>
+  <p class="small">Clicking through the console to build Cloud Air's baseline is not acceptable in a production context. Lab 2a makes the template the authoritative record.</p>
+</section>
+
+<section>
+  <h2>CloudFormation — Template Anatomy</h2>
+  <pre><code>AWSTemplateFormatVersion: "2010-09-09"
+Description: Cloud Air baseline stack
+
+Parameters:
+  UserId:
+    Type: String
+
+Resources:
+  FlightSearchBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub "cloudair-${UserId}-search-assets"
+      Tags:
+        - Key: Owner
+          Value: !Sub "cloudair-${UserId}"
+
+  BookingTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub "cloudair-${UserId}-bookings"
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: PK
+          AttributeType: S
+      KeySchema:
+        - AttributeName: PK
+          KeyType: HASH</code></pre>
+</section>
+
+<section>
+  <h2>CloudFormation — Stack Operations</h2>
+  <pre><code># Deploy (create or update) with a change set
+aws cloudformation deploy \
+  --template-file labs/files/lab2/cloudair-base.yaml \
+  --stack-name cloudair-${USER_ID}-base \
+  --parameter-overrides UserId=${USER_ID} \
+  --capabilities CAPABILITY_NAMED_IAM \
+  --tags Owner=cloudair-${USER_ID}
+
+# Describe outputs (e.g. S3 bucket name, DynamoDB table ARN)
+aws cloudformation describe-stacks \
+  --stack-name cloudair-${USER_ID}-base \
+  --query "Stacks[0].Outputs"</code></pre>
+  <p class="small"><code>--capabilities CAPABILITY_NAMED_IAM</code> is required when the template creates IAM resources with custom names. Never skip it blindly — verify what IAM resources the template actually creates.</p>
+</section>
+
+<section>
+  <h2>Elastic Beanstalk — Deploying the Monolith</h2>
+  <ul>
+    <li>Elastic Beanstalk is a PaaS layer over EC2 + ALB + Auto Scaling — it manages the underlying infrastructure while letting you control the platform</li>
+    <li>Deployment model: zip your code, push to S3, Beanstalk handles rolling deploys, health checks, and rollback</li>
+    <li>Environment variables in Beanstalk replace hardcoded config — first step toward Factor III compliance</li>
+    <li>The Cloud Air monolith targets Python 3.11 on AL2023 — platform ARN in <code>lab2b</code> template</li>
+  </ul>
+  <pre><code># Lab 2b: create the Beanstalk environment
+aws elasticbeanstalk create-environment \
+  --application-name cloudair-${USER_ID} \
+  --environment-name cloudair-${USER_ID}-monolith \
+  --solution-stack-name "64bit Amazon Linux 2023 v4 running Python 3.11" \
+  --option-settings file://labs/files/lab2/eb-options.json</code></pre>
+</section>
+
+<section>
+  <h2>Beanstalk Environment Variables &amp; Config Files</h2>
+  <pre><code># .ebextensions/cloudair.config — Factor III: config from environment
+option_settings:
+  aws:elasticbeanstalk:application:environment:
+    AWS_REGION: us-east-1
+    DB_TABLE_NAME: cloudair-user1-bookings
+    LOG_LEVEL: INFO
+    SSM_PREFIX: /cloudair/user1
+
+# In app code — no hardcoding, no config.py
+import os
+TABLE = os.environ["DB_TABLE_NAME"]
+PREFIX = os.environ["SSM_PREFIX"]</code></pre>
+  <p class="small">These values will later move to SSM Parameter Store (Lab 3a). The Beanstalk option settings serve as a bridge: the code is already factor-compliant, the config location improves in Lab 3.</p>
+</section>
+
+<section>
+  <h2>IaC Options at a Glance</h2>
+  <ul>
+    <li><strong>CloudFormation</strong> — JSON/YAML; AWS-native; full feature coverage; change sets; drift detection. Used for the Cloud Air base stack.</li>
+    <li><strong>AWS CDK</strong> — TypeScript/Python/Java constructs that compile to CloudFormation. Higher abstraction; best for complex, programmatically generated stacks.</li>
+    <li><strong>AWS SAM</strong> — CloudFormation extension with shorthand for Lambda, API GW, Step Functions. Used from Lab 4a onwards for serverless services.</li>
+    <li><strong>Terraform</strong> — multi-cloud HCL; not used in this course but the concepts transfer directly.</li>
+  </ul>
+  <p class="small">Rule of thumb: CloudFormation for shared infrastructure (VPC, DynamoDB, IAM); SAM for application-layer serverless resources. CDK when the infra logic is complex enough to warrant a programming language.</p>
+</section>
+
+<section data-background-color="#FF9900">
+  <span class="lab-tag">Hands-On Lab Block · 2 × ~45 min</span>
+  <h2>🧪 Labs 2a · 2b</h2>
+  <ul>
+    <li><strong>2a — IaC: CloudFormation Base Stack.</strong> Author and deploy the Cloud Air baseline template: VPC, S3 bucket, DynamoDB table, IAM execution role. Inspect outputs; verify drift detection.</li>
+    <li><strong>2b — Elastic Beanstalk Monolith Deploy.</strong> Package and deploy the Cloud Air Flask application to a Beanstalk Python 3.11 environment. Configure environment variables; verify the health dashboard; perform a rolling update.</li>
+  </ul>
+  <p class="small"><code>labs/lab2a-iac-cloudformation.md · lab2b-elastic-beanstalk.md</code></p>
+</section>
+
+<section data-background-color="#146EB4">
+  <h2>Coming Up</h2>
+  <p>Module 5 — DevOps &amp; CI/CD. The monolith is running. Now we automate every subsequent change through a repeatable pipeline so no one ever SSH-deploys to production again.</p>
+</section>
+
+</div></div>
+<script src="https://cdn.jsdelivr.net/npm/reveal.js@5.1.0/dist/reveal.js"></script>
+<script>Reveal.initialize({ hash: true, slideNumber: 'c/t', transition: 'fade', width: 1280, height: 800, margin: 0.04, minScale: 0.2, maxScale: 2.0 });</script>
+</body>
+</html>

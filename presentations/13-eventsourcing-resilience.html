@@ -1,0 +1,189 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Module 13 — Event Sourcing, CQRS &amp; Designing for Resilience</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/reveal.js@5.1.0/dist/reset.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/reveal.js@5.1.0/dist/reveal.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/reveal.js@5.1.0/dist/theme/white.css">
+<style>
+  :root { --aws-orange:#FF9900; --aws-navy:#232F3E; --aws-blue:#146EB4; }
+  .reveal h1, .reveal h2, .reveal h3 { color: var(--aws-navy); font-weight: 600; letter-spacing: -0.5px; }
+  .reveal h1 { font-size: 2.2em; }
+  .reveal h2 { font-size: 1.5em; }
+  .reveal h3 { font-size: 1.1em; color: var(--aws-blue); }
+  .reveal section { text-align: left; }
+  .reveal section.title-slide { text-align: center; }
+  .reveal .accent { color: var(--aws-orange); }
+  .reveal ul { line-height: 1.5; }
+  .reveal code { background:#f4f4f4; padding:2px 6px; border-radius:4px; color:#c7254e; }
+  .reveal pre code { display:block; padding:10px 14px; font-size:0.65em; line-height:1.35; }
+  .reveal .small { font-size: 0.7em; color:#555; }
+  .reveal section[data-background-color] h2,
+  .reveal section[data-background-color] p,
+  .reveal section[data-background-color] li { color:#fff; }
+  .reveal .lab-tag { display:inline-block; background:#fff; color:var(--aws-navy);
+    padding:6px 14px; border-radius:20px; font-size:0.6em; font-weight:700;
+    letter-spacing:1px; text-transform:uppercase; }
+</style>
+</head>
+<body>
+<div class="reveal"><div class="slides">
+
+<section class="title-slide">
+  <h1>Module 13</h1>
+  <h3 class="accent">Event Sourcing, CQRS &amp; Designing for Resilience</h3>
+  <p class="small">Formalizing Cloud Air's event-driven model and building systems that fail gracefully.</p>
+</section>
+
+<section>
+  <h2>Event Sourcing</h2>
+  <ul>
+    <li>Instead of storing <em>current state</em>, store the <em>ordered sequence of events</em> that led to that state</li>
+    <li>Current state = <strong>fold (reduce) over the event log</strong></li>
+    <li>Benefits: full audit trail, time-travel debugging, event replay to build new projections</li>
+    <li>Cloud Air bookings: <code>SeatHeld → PaymentProcessed → BookingConfirmed → BoardingPassIssued</code> — each event is immutable, append-only</li>
+  </ul>
+  <pre><code class="language-python"># Append an event to DynamoDB event store
+ddb = boto3.resource("dynamodb")
+table = ddb.Table(f"cloudair-{USER_ID}-events")
+table.put_item(Item={
+    "pk": f"BOOKING#{booking_id}",
+    "sk": f"EVENT#{timestamp}#{event_type}",
+    "eventType": event_type,
+    "payload": payload,
+    "version": version
+})</code></pre>
+</section>
+
+<section>
+  <h2>CQRS — Command Query Responsibility Segregation</h2>
+  <ul>
+    <li>Split the model into two paths: <strong>Commands</strong> (write, modify state) and <strong>Queries</strong> (read, never modify)</li>
+    <li>Commands write to the event store; projections (read models) are built asynchronously from those events</li>
+    <li>Enables independent scaling of read and write paths — Cloud Air's flight-search read replica scales to handle millions of queries without contending with booking writes</li>
+    <li>AWS implementation: DynamoDB Streams (events) → Lambda (projector) → ElasticSearch / DynamoDB (read model)</li>
+  </ul>
+  <p class="small">CQRS pairs naturally with event sourcing but is independently useful — you can apply CQRS without full event sourcing.</p>
+</section>
+
+<section>
+  <h2>DynamoDB Streams as an Event Feed</h2>
+  <pre><code class="language-python"># Lambda handler receiving DynamoDB Stream records
+def handler(event, context):
+    for record in event["Records"]:
+        if record["eventName"] != "INSERT":
+            continue
+        new_image = record["dynamodb"]["NewImage"]
+        event_type = new_image["eventType"]["S"]
+        payload    = json.loads(new_image["payload"]["S"])
+
+        if event_type == "BookingConfirmed":
+            # Project into the read model
+            update_booking_summary(payload)
+            # Fan out to EventBridge
+            publish_domain_event(event_type, payload)</code></pre>
+  <p class="small">DynamoDB Streams gives ordered, at-least-once delivery per partition key — treat the projector as idempotent.</p>
+</section>
+
+<section>
+  <h2>Idempotency</h2>
+  <ul>
+    <li>At-least-once delivery means your handler <em>will</em> receive duplicates — design for it</li>
+    <li>Pattern: store a <strong>deduplication key</strong> (message ID + event type) in DynamoDB with a TTL; check before processing</li>
+    <li>Lambda Powertools <code>idempotent</code> decorator automates this pattern with DynamoDB persistence</li>
+  </ul>
+  <pre><code class="language-python">from aws_lambda_powertools.utilities.idempotency import (
+    idempotent, DynamoDBPersistenceLayer)
+
+persistence = DynamoDBPersistenceLayer(
+    table_name=f"cloudair-{USER_ID}-idempotency")
+
+@idempotent(persistence_store=persistence)
+def handler(event, context):
+    # Safe to invoke multiple times — second call returns cached result
+    return process_booking(event["bookingId"])</code></pre>
+</section>
+
+<section>
+  <h2>Retry Strategies &amp; Exponential Backoff</h2>
+  <ul>
+    <li>Naive fixed-interval retries amplify load during outages — use <strong>exponential backoff with jitter</strong></li>
+    <li>boto3 uses adaptive retry by default; tune with <code>Config(retries={"max_attempts": 5, "mode": "adaptive"})</code></li>
+    <li>SQS visibility timeout acts as the retry interval for queue consumers — set it longer than your processing P99</li>
+    <li>Step Functions <code>Retry</code> block supports <code>BackoffRate</code> and <code>MaxAttempts</code> natively</li>
+  </ul>
+  <pre><code class="language-python">from botocore.config import Config
+
+ddb = boto3.client("dynamodb", config=Config(
+    retries={"max_attempts": 5, "mode": "adaptive"}
+))</code></pre>
+</section>
+
+<section>
+  <h2>Dead-Letter Queues &amp; Poison Pills</h2>
+  <ul>
+    <li>A <strong>poison-pill message</strong> — one that always causes a processing error — will reappear until it hits <code>maxReceiveCount</code>, then moves to the DLQ</li>
+    <li>DLQ should trigger an alert (SNS → email/Slack) and a separate Lambda for inspection/requeue</li>
+    <li>EventBridge rules also support a DLQ for failed target invocations</li>
+    <li>Lambda async invocations have a dedicated DLQ configuration (<code>FunctionEventInvokeConfig</code>)</li>
+  </ul>
+  <pre><code class="language-bash">aws sqs set-queue-attributes \
+  --queue-url $QUEUE_URL \
+  --attributes '{"RedrivePolicy": "{\"deadLetterTargetArn\":\"'$DLQ_ARN'\",\"maxReceiveCount\":\"3\"}"}'</code></pre>
+</section>
+
+<section>
+  <h2>Designing for Failure — Key Patterns</h2>
+  <ul>
+    <li><strong>Circuit Breaker</strong> — stop calling a failing downstream; fast-fail until it recovers</li>
+    <li><strong>Bulkhead</strong> — isolate thread/connection pools so one service's failure doesn't starve others</li>
+    <li><strong>Timeout everywhere</strong> — Lambda has a max 15 min timeout; always set it lower than your caller's timeout</li>
+    <li><strong>Graceful degradation</strong> — Cloud Air serves cached flight data when the live inventory service is unhealthy</li>
+    <li><strong>Health checks</strong> — ALB target groups, Route 53 health checks, and Lambda <code>ProvisionedConcurrency</code> warmup</li>
+  </ul>
+  <p class="small">AWS Lambda Powertools' <code>BatchProcessor</code> handles partial batch failures — report individual item failures so SQS only requeues failed records, not the whole batch.</p>
+</section>
+
+<section>
+  <h2>EventBridge — Archive &amp; Replay for Resilience</h2>
+  <pre><code class="language-bash"># Create an archive for all booking events
+aws events create-archive \
+  --archive-name cloudair-$USER_ID-booking-archive \
+  --event-source-arn arn:aws:events:us-east-1:$ACCT:event-bus/cloudair-$USER_ID-bus \
+  --event-pattern '{"source":["cloudair.booking"]}' \
+  --retention-days 90
+
+# Replay events to a target bus (e.g., test a new consumer)
+aws events start-replay \
+  --replay-name test-new-consumer \
+  --event-source-arn arn:aws:events:us-east-1:$ACCT:archive/cloudair-$USER_ID-booking-archive \
+  --event-start-time 2025-01-01T00:00:00Z \
+  --event-end-time   2025-01-02T00:00:00Z \
+  --destination '{"Arn":"arn:aws:events:us-east-1:$ACCT:event-bus/cloudair-$USER_ID-bus"}'</code></pre>
+  <p class="small">Replay enables testing new consumers against production-shaped historical data — a critical resilience and correctness practice.</p>
+</section>
+
+<section data-background-color="#FF9900">
+  <span class="lab-tag">Hands-On Lab Block · 45 min</span>
+  <h2>🧪 Lab 6b — EventBridge Event Bus, Rules &amp; DLQ</h2>
+  <ul>
+    <li>Create a custom EventBridge bus and publish <code>booking.confirmed</code> domain events from a Lambda</li>
+    <li>Author event pattern rules routing to a notification Lambda and an audit SQS queue</li>
+    <li>Configure a DLQ on the rule target; simulate a target failure and verify DLQ capture</li>
+    <li>Enable archive on the bus; replay a subset of events against a new Lambda target</li>
+  </ul>
+  <p class="small"><code>labs/lab6b-eventbridge.md</code></p>
+</section>
+
+<section data-background-color="#146EB4">
+  <h2>Coming Up</h2>
+  <p>Module 14 — Security &amp; Observability. Lock down Cloud Air with Cognito JWT authorization and instrument every service with X-Ray distributed tracing.</p>
+</section>
+
+</div></div>
+<script src="https://cdn.jsdelivr.net/npm/reveal.js@5.1.0/dist/reveal.js"></script>
+<script>Reveal.initialize({ hash: true, slideNumber: 'c/t', transition: 'fade', width: 1280, height: 800, margin: 0.04, minScale: 0.2, maxScale: 2.0 });</script>
+</body>
+</html>

@@ -1,0 +1,183 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Module 10 — Polyglot Persistence &amp; DynamoDB Best Practices</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/reveal.js@5.1.0/dist/reset.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/reveal.js@5.1.0/dist/reveal.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/reveal.js@5.1.0/dist/theme/white.css">
+<style>
+  :root { --aws-orange:#FF9900; --aws-navy:#232F3E; --aws-blue:#146EB4; }
+  .reveal h1, .reveal h2, .reveal h3 { color: var(--aws-navy); font-weight: 600; letter-spacing: -0.5px; }
+  .reveal h1 { font-size: 2.2em; }
+  .reveal h2 { font-size: 1.5em; }
+  .reveal h3 { font-size: 1.1em; color: var(--aws-blue); }
+  .reveal section { text-align: left; }
+  .reveal section.title-slide { text-align: center; }
+  .reveal .accent { color: var(--aws-orange); }
+  .reveal ul { line-height: 1.5; }
+  .reveal code { background:#f4f4f4; padding:2px 6px; border-radius:4px; color:#c7254e; }
+  .reveal pre code { display:block; padding:10px 14px; font-size:0.65em; line-height:1.35; }
+  .reveal .small { font-size: 0.7em; color:#555; }
+  .reveal section[data-background-color] h2,
+  .reveal section[data-background-color] p,
+  .reveal section[data-background-color] li { color:#fff; }
+  .reveal .lab-tag { display:inline-block; background:#fff; color:var(--aws-navy);
+    padding:6px 14px; border-radius:20px; font-size:0.6em; font-weight:700;
+    letter-spacing:1px; text-transform:uppercase; }
+</style>
+</head>
+<body>
+<div class="reveal"><div class="slides">
+
+<section class="title-slide">
+  <h1>Module 10</h1>
+  <h3 class="accent">Polyglot Persistence &amp; DynamoDB Best Practices</h3>
+  <p class="small">Right database per job, DynamoDB single-table design, access patterns first, and where DAX fits into the Cloud Air read path.</p>
+</section>
+
+<section>
+  <h2>Polyglot Persistence</h2>
+  <ul>
+    <li>Microservices own their data — each service chooses the store that best fits its access patterns</li>
+    <li><strong>Relational (Aurora)</strong> — strong consistency, complex queries, transactional writes (Cloud Air: booking ledger)</li>
+    <li><strong>Key-value / document (DynamoDB)</strong> — single-digit millisecond reads at any scale (Cloud Air: flight inventory, loyalty points, sessions)</li>
+    <li><strong>Search (OpenSearch)</strong> — full-text and faceted queries (Cloud Air: fare search with filters)</li>
+    <li><strong>Cache (ElastiCache / DAX)</strong> — microsecond reads for hot data (Cloud Air: price cache)</li>
+    <li><strong>Object store (S3)</strong> — boarding passes, receipts, ML training data</li>
+  </ul>
+  <p class="small">The anti-pattern is forcing every service to share a single Aurora instance because "that's what we know." Each service's query shape should drive the storage decision.</p>
+</section>
+
+<section>
+  <h2>DynamoDB Fundamentals</h2>
+  <ul>
+    <li>Fully managed, serverless, multi-AZ replicated key-value + document store</li>
+    <li>Every item identified by a <strong>partition key</strong> (PK) and optional <strong>sort key</strong> (SK)</li>
+    <li>Data distributed across partitions by hashing PK; a single partition holds ≤10 GB</li>
+    <li>Reads: <code>GetItem</code> (single), <code>Query</code> (same PK, SK range), <code>Scan</code> (avoid in hot paths)</li>
+    <li>Writes: <code>PutItem</code>, <code>UpdateItem</code>, <code>DeleteItem</code>, <code>TransactWriteItems</code> (up to 100 items, atomic)</li>
+    <li>Capacity modes: <strong>on-demand</strong> (pay per RCU/WCU) or <strong>provisioned</strong> (reserve + auto-scaling)</li>
+  </ul>
+  <p class="small">1 RCU = one strongly consistent read of an item ≤ 4 KB. 1 WCU = one write of an item ≤ 1 KB. Model your capacity before choosing provisioned mode.</p>
+</section>
+
+<section>
+  <h2>Access Patterns First</h2>
+  <ul>
+    <li>DynamoDB is <em>not</em> a flexible query engine — you must know your access patterns before schema design</li>
+    <li>List every query the application will execute: "get all flights from JFK on 2025-07-04", "get a booking by PNR", "list all bookings for user U"</li>
+    <li>Each access pattern must be answerable with a <code>GetItem</code> or <code>Query</code> — never a <code>Scan</code></li>
+    <li>For Cloud Air Flight Search: 3 primary access patterns drive the entire key design</li>
+  </ul>
+  <pre><code># Cloud Air access patterns
+# AP1: Get flights by route+date
+#   PK=ROUTE#JFK#LAX  SK=DATE#2025-07-04#FLIGHT#CA201
+# AP2: Get a single flight by ID
+#   PK=FLIGHT#CA201   SK=METADATA
+# AP3: Get all departures from an airport on a date
+#   GSI1PK=ORIGIN#JFK  GSI1SK=DATE#2025-07-04</code></pre>
+</section>
+
+<section>
+  <h2>Single-Table Design</h2>
+  <ul>
+    <li>Store <em>all entity types</em> in one table, distinguished by composite key patterns</li>
+    <li>Eliminates cross-table joins; all related data retrieved in a single <code>Query</code></li>
+    <li>Use generic attribute names: <code>PK</code>, <code>SK</code>, <code>GSI1PK</code>, <code>GSI1SK</code>, <code>EntityType</code></li>
+    <li>Overloaded keys: the same <code>PK=USER#U001</code> anchor can have <code>SK=PROFILE</code>, <code>SK=BOOKING#B001</code>, <code>SK=LOYALTY</code></li>
+    <li>Trade-off: flexibility of SQL is replaced by intentional, pre-modelled access patterns</li>
+  </ul>
+  <p class="small">Rick Houlihan's "NoSQL Design for DynamoDB" paper (AWS docs) is the canonical reference. Single-table is not always correct — if your access patterns are simple and few, a multi-table design can be clearer.</p>
+</section>
+
+<section>
+  <h2>Single-Table — Cloud Air Schema</h2>
+  <pre><code># Table: cloudair-$USER_ID-main
+# Entity: Flight
+{ "PK": "FLIGHT#CA201",    "SK": "METADATA",
+  "EntityType": "FLIGHT",  "Origin": "JFK",  "Dest": "LAX",
+  "DepartureDate": "2025-07-04", "DepartureTime": "08:00",
+  "Capacity": 180,         "Available": 42   }
+
+# Entity: Booking (child of Flight and User)
+{ "PK": "USER#U001",       "SK": "BOOKING#B20250704001",
+  "EntityType": "BOOKING", "FlightID": "CA201",
+  "PNR": "XYZ123",         "Status": "CONFIRMED",
+  "GSI1PK": "FLIGHT#CA201","GSI1SK": "BOOKING#B20250704001" }
+
+# Entity: LoyaltyAccount (same table, different SK prefix)
+{ "PK": "USER#U001",       "SK": "LOYALTY",
+  "EntityType": "LOYALTY", "Points": 12450,  "Tier": "Gold" }</code></pre>
+</section>
+
+<section>
+  <h2>Global Secondary Indexes (GSIs)</h2>
+  <ul>
+    <li>A GSI projects a subset of attributes onto a new PK/SK pair; separate read capacity</li>
+    <li>Supports access patterns the base table cannot answer without a <code>Scan</code></li>
+    <li>Up to 20 GSIs per table; each incurs storage and write amplification</li>
+    <li><strong>GSI overloading:</strong> <code>GSI1PK</code> / <code>GSI1SK</code> carry different semantic values per entity type — one GSI, multiple access patterns</li>
+    <li>Consistency: GSIs are <em>eventually consistent</em> — propagation lag is typically &lt;1 s but non-zero</li>
+  </ul>
+  <pre><code>aws dynamodb create-table \
+  --table-name cloudair-$USER_ID-main \
+  --attribute-definitions AttributeName=PK,AttributeType=S \
+    AttributeName=SK,AttributeType=S \
+    AttributeName=GSI1PK,AttributeType=S \
+  --key-schema AttributeName=PK,KeyType=HASH \
+    AttributeName=SK,KeyType=RANGE \
+  --billing-mode PAY_PER_REQUEST \
+  --global-secondary-indexes file://gsi.json</code></pre>
+</section>
+
+<section>
+  <h2>Capacity Modes &amp; Hot Partitions</h2>
+  <ul>
+    <li><strong>On-demand:</strong> scales instantly to any throughput; ideal for spiky, unpredictable loads (Cloud Air: fare search during a sale event)</li>
+    <li><strong>Provisioned + auto-scaling:</strong> set min/max RCU/WCU; auto-scaling reacts to CloudWatch metrics; lower cost at steady, predictable load</li>
+    <li><strong>Hot partition anti-pattern:</strong> monotonically increasing PK (e.g. timestamp) funnels all writes to one partition; use a shard suffix or randomise the PK prefix</li>
+    <li>Write sharding example: <code>PK = "BOOKING#" + str(random.randint(0, 9))</code> spreads writes; read by querying all 10 shard keys and merging</li>
+  </ul>
+  <p class="small">A single DynamoDB partition is capped at 1,000 WCU and 3,000 RCU. Designing around this limit is mandatory for high-throughput write workloads.</p>
+</section>
+
+<section>
+  <h2>DynamoDB Accelerator (DAX)</h2>
+  <ul>
+    <li>In-memory write-through cache, DynamoDB-compatible API — microsecond read latency</li>
+    <li>Drop-in replacement: change <code>boto3.resource("dynamodb")</code> to a DAX client endpoint</li>
+    <li>Ideal for: high-read workloads, hot items, repeated identical reads (fare display)</li>
+    <li>Deployed as a cluster inside your VPC; Lambda must be VPC-attached to reach it</li>
+    <li><strong>Not appropriate for:</strong> strongly consistent reads (DAX cannot serve them), write-heavy tables</li>
+  </ul>
+  <pre><code>import amazondax, boto3
+client = amazondax.AmazonDaxClient.resource(
+    endpoint_url="dax://cloudair-dax.xyz.dax.us-east-1.amazonaws.com",
+    region_name="us-east-1")
+table = client.Table("cloudair-prod-main")</code></pre>
+</section>
+
+<section data-background-color="#FF9900">
+  <span class="lab-tag">Hands-On Lab · 40 min</span>
+  <h2>🧪 Lab 5a — DynamoDB Single-Table Design</h2>
+  <ul>
+    <li>Create the <code>cloudair-$USER_ID-main</code> table with on-demand billing and a GSI for flight-by-booking queries</li>
+    <li>Seed the table with Cloud Air flight and booking records using a Python loader script</li>
+    <li>Implement and test all three access patterns using <code>boto3</code> Query calls (no Scans)</li>
+    <li>Verify GSI query returns bookings for a flight; confirm eventual consistency window with a forced read-immediately-after-write test</li>
+  </ul>
+  <p class="small"><code>labs/lab5a-dynamodb-singletable.md</code></p>
+</section>
+
+<section data-background-color="#146EB4">
+  <h2>Coming Up</h2>
+  <p>Module 11 — Distributed Complexity &amp; Step Functions. With the right data store in place, we tackle the multi-step Cloud Air booking saga — and why you need a state machine to do it safely.</p>
+</section>
+
+</div></div>
+<script src="https://cdn.jsdelivr.net/npm/reveal.js@5.1.0/dist/reveal.js"></script>
+<script>Reveal.initialize({ hash: true, slideNumber: 'c/t', transition: 'fade', width: 1280, height: 800, margin: 0.04, minScale: 0.2, maxScale: 2.0 });</script>
+</body>
+</html>

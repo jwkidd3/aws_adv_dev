@@ -1,0 +1,212 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Module 8 — Microservices with Lambda, API Gateway &amp; SAM</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/reveal.js@5.1.0/dist/reset.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/reveal.js@5.1.0/dist/reveal.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/reveal.js@5.1.0/dist/theme/white.css">
+<style>
+  :root { --aws-orange:#FF9900; --aws-navy:#232F3E; --aws-blue:#146EB4; }
+  .reveal h1, .reveal h2, .reveal h3 { color: var(--aws-navy); font-weight: 600; letter-spacing: -0.5px; }
+  .reveal h1 { font-size: 2.2em; }
+  .reveal h2 { font-size: 1.5em; }
+  .reveal h3 { font-size: 1.1em; color: var(--aws-blue); }
+  .reveal section { text-align: left; }
+  .reveal section.title-slide { text-align: center; }
+  .reveal .accent { color: var(--aws-orange); }
+  .reveal ul { line-height: 1.5; }
+  .reveal code { background:#f4f4f4; padding:2px 6px; border-radius:4px; color:#c7254e; }
+  .reveal pre code { display:block; padding:10px 14px; font-size:0.65em; line-height:1.35; }
+  .reveal .small { font-size: 0.7em; color:#555; }
+  .reveal section[data-background-color] h2,
+  .reveal section[data-background-color] p,
+  .reveal section[data-background-color] li { color:#fff; }
+  .reveal .lab-tag { display:inline-block; background:#fff; color:var(--aws-navy);
+    padding:6px 14px; border-radius:20px; font-size:0.6em; font-weight:700;
+    letter-spacing:1px; text-transform:uppercase; }
+</style>
+</head>
+<body>
+<div class="reveal"><div class="slides">
+
+<section class="title-slide">
+  <h1>Module 8</h1>
+  <h3 class="accent">Microservices with Lambda, API Gateway &amp; SAM</h3>
+  <p class="small">Deep-dive: Lambda internals, API Gateway integration patterns, and SAM as the Infrastructure-as-Code tool that ties them together for Cloud Air.</p>
+</section>
+
+<section>
+  <h2>Lambda Deep Dive — Handler Contract</h2>
+  <pre><code>import json, boto3, os
+
+dynamodb = boto3.resource("dynamodb")  # initialised once, reused across warm invocations
+table = dynamodb.Table(os.environ["FLIGHTS_TABLE"])
+
+def handler(event, context):
+    origin = event["pathParameters"]["origin"]
+    dest   = event["pathParameters"]["dest"]
+    items  = table.query(
+        KeyConditionExpression="origin = :o AND dest = :d",
+        ExpressionAttributeValues={":o": origin, ":d": dest}
+    )["Items"]
+    return {"statusCode": 200,
+            "body": json.dumps(items),
+            "headers": {"Content-Type": "application/json"}}</code></pre>
+  <p class="small"><code>event</code> is the raw event JSON parsed to a dict. <code>context</code> exposes <code>remaining_time_in_millis()</code>, function name, request ID, and the invoked ARN.</p>
+</section>
+
+<section>
+  <h2>Lambda Execution Environment</h2>
+  <ul>
+    <li><strong>Init phase:</strong> download deployment package, start runtime, execute module-level code</li>
+    <li><strong>Invoke phase:</strong> call handler function; execution environment may be reused ("warm")</li>
+    <li><strong>Shutdown:</strong> environment frozen after configurable idle timeout (~5–15 min)</li>
+    <li>Anything initialised outside the handler survives across warm invocations — SDK clients, DB connections, loaded config</li>
+    <li>Concurrency = number of simultaneous execution environments; default burst limit 3,000/region</li>
+    <li><code>Reserved concurrency</code> caps a function; <code>Provisioned concurrency</code> pre-warms environments</li>
+  </ul>
+</section>
+
+<section>
+  <h2>API Gateway — Integration Types</h2>
+  <ul>
+    <li><strong>Lambda Proxy integration</strong> — full HTTP request forwarded as-is; handler owns the response shape (status, headers, body). Simplest, recommended default.</li>
+    <li><strong>Lambda Custom integration</strong> — mapping templates transform request/response using VTL; rarely needed for new builds</li>
+    <li><strong>HTTP / HTTP_PROXY</strong> — forward to any HTTP endpoint (the monolith!); no Lambda needed</li>
+    <li><strong>Mock</strong> — return a static response; useful for CORS pre-flight and contract stubs</li>
+    <li>REST API (v1) vs. HTTP API (v2) — HTTP API is lower cost, lower latency, recommended unless you need usage plans or request validation</li>
+  </ul>
+  <p class="small">Cloud Air uses HTTP API (v2) for new microservices and a REST API (v1) for the legacy proxy route because REST API supports per-stage throttling and usage plans.</p>
+</section>
+
+<section>
+  <h2>API Gateway — Request Flow</h2>
+  <ul>
+    <li>Client → <strong>DNS / CloudFront edge</strong> → API Gateway regional endpoint</li>
+    <li>API GW evaluates: <strong>authorizer</strong> (JWT / Lambda) → <strong>throttle limits</strong> → <strong>route matching</strong></li>
+    <li>Matched route invokes the integration (Lambda, HTTP proxy, or mock)</li>
+    <li>Integration response mapped back to HTTP response</li>
+    <li>API GW adds <code>X-Amzn-RequestId</code> and <code>X-Amzn-Trace-Id</code> headers for tracing</li>
+    <li>Access logs and execution logs land in CloudWatch; enable <code>$context.integrationLatency</code> to surface Lambda cold starts</li>
+  </ul>
+</section>
+
+<section>
+  <h2>SAM — Serverless Application Model</h2>
+  <ul>
+    <li>CloudFormation extension: transforms <code>AWS::Serverless::*</code> resources into standard CFn</li>
+    <li>Opinionated shorthand for the Lambda + API GW + IAM role triad</li>
+    <li><code>sam build</code> — resolves dependencies, packages artifacts into <code>.aws-sam/</code></li>
+    <li><code>sam deploy --guided</code> — uploads to S3, executes CloudFormation changeset</li>
+    <li><code>sam local invoke</code> / <code>sam local start-api</code> — runs Lambda in Docker locally</li>
+    <li>Integrated with <code>sam sync</code> for fast incremental deploys during development</li>
+  </ul>
+  <p class="small">SAM is not a new deploy tool — it is a CloudFormation transform. Every <code>sam deploy</code> produces a standard CloudFormation stack you can inspect, rollback, and manage with existing CFn tooling.</p>
+</section>
+
+<section>
+  <h2>SAM Template — Flight Search Service</h2>
+  <pre><code>AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+
+Parameters:
+  UserID: { Type: String }
+
+Globals:
+  Function:
+    Runtime: python3.12
+    Environment:
+      Variables:
+        FLIGHTS_TABLE: !Sub "cloudair-${UserID}-flights"
+
+Resources:
+  FlightSearchFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: search.handler
+      CodeUri: src/
+      Policies: [AmazonDynamoDBReadOnlyAccess]
+      Events:
+        SearchApi:
+          Type: HttpApi
+          Properties:
+            Path: /flights/{origin}/{dest}
+            Method: GET</code></pre>
+</section>
+
+<section>
+  <h2>SAM Build &amp; Deploy Workflow</h2>
+  <pre><code># First deploy — interactive guided setup
+sam build
+sam deploy --guided \
+  --stack-name cloudair-$USER_ID-search \
+  --parameter-overrides UserID=$USER_ID \
+  --capabilities CAPABILITY_IAM \
+  --region us-east-1
+
+# Subsequent deploys — use samconfig.toml generated by --guided
+sam build && sam deploy
+
+# Local testing before deploy
+sam local invoke FlightSearchFunction \
+  --event events/search-event.json</code></pre>
+  <p class="small"><code>sam build</code> respects <code>.gitignore</code> and only packages source — never credentials. The <code>samconfig.toml</code> file commits safely to source control.</p>
+</section>
+
+<section>
+  <h2>Lambda Layers &amp; Dependency Management</h2>
+  <ul>
+    <li><strong>Layers</strong> — shared ZIP of libraries, mounted at <code>/opt</code> in the execution environment</li>
+    <li>Use for: boto3 upgrades, shared utility code, large ML models, compiled binaries</li>
+    <li>Up to 5 layers per function; total unzipped size ≤ 250 MB</li>
+    <li>SAM: <code>AWS::Serverless::LayerVersion</code> with <code>ContentUri</code> pointing to a requirements folder</li>
+    <li>Alternative: Lambda container images — package everything in a Docker image, no size limit on the image itself (up to 10 GB ECR image)</li>
+  </ul>
+  <pre><code># SAM — reference a layer in a function
+Layers:
+  - !Ref CloudAirUtilsLayer
+  - arn:aws:lambda:us-east-1:123456789012:layer:aws-sdk-pandas:8</code></pre>
+</section>
+
+<section>
+  <h2>Testing Lambda Functions</h2>
+  <ul>
+    <li><strong>Unit tests</strong> — mock boto3 with <code>moto</code>; call <code>handler(event, {})</code> directly</li>
+    <li><strong>Local integration</strong> — <code>sam local start-api</code>; call via <code>curl</code> or Postman against <code>localhost:3000</code></li>
+    <li><strong>Cloud integration</strong> — deploy to a personal stack (<code>cloudair-$USER_ID-dev</code>); test against real AWS services</li>
+    <li><strong>Contract testing</strong> — validate event shapes with JSON Schema; catch API Gateway ↔ Lambda mismatches early</li>
+  </ul>
+  <pre><code># moto-based unit test pattern
+from moto import mock_dynamodb
+import boto3, json
+from search import handler
+
+@mock_dynamodb
+def test_search_returns_flights():
+    # set up mock table, seed data, then:
+    resp = handler({"pathParameters": {"origin":"JFK","dest":"LAX"}}, {})
+    assert resp["statusCode"] == 200</code></pre>
+</section>
+
+<section data-background-color="#FF9900">
+  <span class="lab-tag">Hands-On Lab Block · 2 × 35 min</span>
+  <h2>🧪 Labs 4a · 4b</h2>
+  <ul>
+    <li><strong>4a — SAM Microservice.</strong> Author a SAM template for the Cloud Air Flight Search service; <code>sam build &amp;&amp; sam deploy</code> to a personal stack; invoke via API Gateway URL; run unit tests with <code>moto</code>.</li>
+    <li><strong>4b — Strangler Routing.</strong> Add an HTTP_PROXY route to the same API Gateway that forwards all non-search traffic to the legacy Beanstalk monolith; verify search is served by Lambda while booking still hits the monolith.</li>
+  </ul>
+  <p class="small"><code>labs/lab4a-sam-microservice.md · lab4b-strangler-routing.md</code></p>
+</section>
+
+<section data-background-color="#146EB4">
+  <h2>Coming Up</h2>
+  <p>Module 9 — Strangling the Monolith. With the first microservice live, we formalise the Strangler Fig pattern and incrementally decompose the remaining Cloud Air routes.</p>
+</section>
+
+</div></div>
+<script src="https://cdn.jsdelivr.net/npm/reveal.js@5.1.0/dist/reveal.js"></script>
+<script>Reveal.initialize({ hash: true, slideNumber: 'c/t', transition: 'fade', width: 1280, height: 800, margin: 0.04, minScale: 0.2, maxScale: 2.0 });</script>
+</body>
+</html>

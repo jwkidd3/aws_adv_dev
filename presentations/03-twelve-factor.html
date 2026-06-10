@@ -1,0 +1,165 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Module 3 — The Twelve-Factor App &amp; Architectural Patterns</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/reveal.js@5.1.0/dist/reset.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/reveal.js@5.1.0/dist/reveal.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/reveal.js@5.1.0/dist/theme/white.css">
+<style>
+  :root { --aws-orange:#FF9900; --aws-navy:#232F3E; --aws-blue:#146EB4; }
+  .reveal h1, .reveal h2, .reveal h3 { color: var(--aws-navy); font-weight: 600; letter-spacing: -0.5px; }
+  .reveal h1 { font-size: 2.2em; }
+  .reveal h2 { font-size: 1.5em; }
+  .reveal h3 { font-size: 1.1em; color: var(--aws-blue); }
+  .reveal section { text-align: left; }
+  .reveal section.title-slide { text-align: center; }
+  .reveal .accent { color: var(--aws-orange); }
+  .reveal ul { line-height: 1.5; }
+  .reveal code { background:#f4f4f4; padding:2px 6px; border-radius:4px; color:#c7254e; }
+  .reveal pre code { display:block; padding:10px 14px; font-size:0.65em; line-height:1.35; }
+  .reveal .small { font-size: 0.7em; color:#555; }
+  .reveal .grid2 { display:grid; grid-template-columns:1fr 1fr; gap:10px 24px; font-size:0.8em; }
+  .reveal .grid2 div { border-left:4px solid var(--aws-orange); padding-left:10px; }
+  .reveal .grid3 { display:grid; grid-template-columns:1fr 1fr 1fr; gap:10px 16px; font-size:0.78em; }
+  .reveal .grid3 div { border-left:3px solid var(--aws-blue); padding-left:8px; }
+  .reveal section[data-background-color] h2,
+  .reveal section[data-background-color] p,
+  .reveal section[data-background-color] li { color:#fff; }
+  .reveal .lab-tag { display:inline-block; background:#fff; color:var(--aws-navy);
+    padding:6px 14px; border-radius:20px; font-size:0.6em; font-weight:700;
+    letter-spacing:1px; text-transform:uppercase; }
+</style>
+</head>
+<body>
+<div class="reveal"><div class="slides">
+
+<section class="title-slide">
+  <h1>Module 3</h1>
+  <h3 class="accent">The Twelve-Factor App &amp; Architectural Patterns</h3>
+  <p class="small">The methodology that underpins every refactoring decision in the Cloud Air migration.</p>
+</section>
+
+<section>
+  <h2>Why the Twelve-Factor App?</h2>
+  <ul>
+    <li>Published by Heroku engineers in 2011 — distills patterns common to SaaS apps that <em>survive at scale</em></li>
+    <li>Not prescriptive about language or framework — applicable to Python, Java, Go, Node equally</li>
+    <li>Cloud Air violates at least 7 of the 12 factors in its current form — we'll map each one</li>
+    <li>Compliance is not optional for serverless: Lambda enforces several factors by design (stateless, ephemeral, env-driven)</li>
+  </ul>
+</section>
+
+<section>
+  <h2>Factors I–IV: Codebase, Dependencies, Config, Backing Services</h2>
+  <div class="grid2">
+    <div><strong>I — Codebase</strong><br><span class="small">One repo, many deploys. Cloud Air has prod, staging and a "demo" branch deployed from laptops. ❌ Fix: single <code>main</code> branch; deploy artefacts only.</span></div>
+    <div><strong>II — Dependencies</strong><br><span class="small">Explicitly declare &amp; isolate. Cloud Air relies on a globally installed <code>psycopg2</code>. ❌ Fix: <code>requirements.txt</code> + <code>venv</code>.</span></div>
+    <div><strong>III — Config</strong><br><span class="small">Store config in the environment, never in code. DB password in <code>config.py</code>. ❌ Fix: SSM Parameter Store + env vars at deploy time.</span></div>
+    <div><strong>IV — Backing Services</strong><br><span class="small">Treat DB, cache, queue as attached resources accessed by URL/credentials. ✅ Already loosely coupled, but DB is hardcoded to localhost.</span></div>
+  </div>
+</section>
+
+<section>
+  <h2>Factors V–VIII: Build, Process, Port, Concurrency</h2>
+  <div class="grid2">
+    <div><strong>V — Build, Release, Run</strong><br><span class="small">Strictly separate stages. Cloud Air SSH-deploys .py files directly to prod. ❌ Fix: CodeBuild artefact → CodeDeploy run stage.</span></div>
+    <div><strong>VI — Processes</strong><br><span class="small">Stateless, share-nothing. Cloud Air stores session data in a module-level dict. ❌ Fix: ElastiCache for sessions; Lambda is stateless by design.</span></div>
+    <div><strong>VII — Port Binding</strong><br><span class="small">Export services via port binding, not container injection. Flask dev server is used in prod behind Nginx. ❌ Fix: Gunicorn on Beanstalk; Lambda HTTP via API GW.</span></div>
+    <div><strong>VIII — Concurrency</strong><br><span class="small">Scale out via the process model. Cloud Air scales by adding threads. ❌ Fix: Lambda scales by adding process instances automatically.</span></div>
+  </div>
+</section>
+
+<section>
+  <h2>Factors IX–XII: Disposability, Dev/Prod Parity, Logs, Admin</h2>
+  <div class="grid2">
+    <div><strong>IX — Disposability</strong><br><span class="small">Fast startup, graceful shutdown. Cloud Air's startup takes 40 s and holds DB connections during shutdown. Fix: decouple connection management; Lambda cold start optimisation.</span></div>
+    <div><strong>X — Dev/Prod Parity</strong><br><span class="small">Keep dev, staging, prod as similar as possible. Local SQLite vs prod Postgres causes silent data-type bugs. Fix: RDS locally via Docker Compose or SAM local.</span></div>
+    <div><strong>XI — Logs</strong><br><span class="small">Treat logs as event streams. Cloud Air writes to rotating files on disk. Fix: structured JSON to stdout → CloudWatch Logs via Lambda/Beanstalk.</span></div>
+    <div><strong>XII — Admin Processes</strong><br><span class="small">Run admin/management tasks as one-off processes. DB migrations run inside the app on startup. Fix: migration task in a separate Lambda invocation or ECS task.</span></div>
+  </div>
+  <p class="small">Cloud Air's compliance score before: 2/12. Target after Labs 1–3: 10/12.</p>
+</section>
+
+<section>
+  <h2>Architectural Styles Relevant to Cloud Air</h2>
+  <ul>
+    <li><strong>Monolith</strong> — single deployable unit; low operational complexity, high coupling; Cloud Air Day 0</li>
+    <li><strong>Modular Monolith</strong> — enforced module boundaries within one process; stepping stone, not the destination</li>
+    <li><strong>Microservices</strong> — independently deployable services with bounded contexts; Cloud Air target; higher operational complexity offset by independent scale and release</li>
+    <li><strong>Serverless</strong> — functions-as-a-service + managed event bus; removes server management entirely; what Lambda + EventBridge give us</li>
+  </ul>
+</section>
+
+<section>
+  <h2>Key Architectural Patterns</h2>
+  <div class="grid3">
+    <div><strong>Strangler Fig</strong><br><span class="small">Incrementally replace monolith functionality by routing traffic to new services</span></div>
+    <div><strong>Saga</strong><br><span class="small">Manage distributed transactions with compensating actions — used in the booking flow via Step Functions</span></div>
+    <div><strong>CQRS</strong><br><span class="small">Separate read and write models to optimise each path independently</span></div>
+    <div><strong>Event Sourcing</strong><br><span class="small">Persist state changes as an immutable event log; rebuild state by replaying</span></div>
+    <div><strong>Anti-Corruption Layer</strong><br><span class="small">Adapter between new microservices and legacy models — prevents old schemas from leaking in</span></div>
+    <div><strong>API Gateway</strong><br><span class="small">Single entry point; centralised auth, rate limiting, routing, contract versioning</span></div>
+  </div>
+</section>
+
+<section>
+  <h2>Config Externalisation — The Twelve-Factor Way</h2>
+  <pre><code># BAD — Factor III violation: config in code
+DB_HOST = "db.internal.cloudair.com"
+DB_PASS = "sup3rS3cret"
+
+# GOOD — read from environment at runtime
+import os, boto3
+
+DB_HOST = os.environ["DB_HOST"]          # injected by Beanstalk env vars
+
+# Secrets: never in env vars either — use Secrets Manager
+secret = boto3.client("secretsmanager") \
+    .get_secret_value(SecretId="cloudair/prod/db")["SecretString"]</code></pre>
+  <p class="small">SSM Parameter Store (non-secret config) and Secrets Manager (credentials, API keys) are the AWS implementations of Factor III and Factor IV. Lab 3 wires both into Cloud Air.</p>
+</section>
+
+<section>
+  <h2>Structured Logging — Factor XI in Practice</h2>
+  <pre><code>import json, logging, os
+
+logger = logging.getLogger()
+logger.setLevel(logging.INFO)
+
+def handler(event, context):
+    logger.info(json.dumps({
+        "service": "flight-search",
+        "user_id": os.environ.get("USER_ID"),
+        "correlation_id": event.get("requestContext", {}).get("requestId"),
+        "origin": event["queryStringParameters"]["origin"],
+        "dest":   event["queryStringParameters"]["destination"],
+    }))
+    # ... search logic</code></pre>
+  <p class="small">Lambda automatically forwards stdout to CloudWatch Logs. JSON structure enables metric filters and Contributor Insights without any log agent.</p>
+</section>
+
+<section>
+  <h2>Twelve-Factor Compliance Checklist for Cloud Air</h2>
+  <ul>
+    <li>✅ I — Single repo (<code>aws_adv_dev</code>) after Lab 1a</li>
+    <li>✅ II — <code>requirements.txt</code> pinned; Lambda layers for shared deps</li>
+    <li>✅ III — No config in code after Lab 3a (SSM) and Lab 3b (Secrets Manager)</li>
+    <li>✅ VI — Lambda is stateless; session state in ElastiCache/DynamoDB</li>
+    <li>✅ VIII — Lambda scales horizontally by default; no thread pool tuning</li>
+    <li>✅ XI — Structured JSON logs to CloudWatch Logs; X-Ray correlation in Lab 7b</li>
+    <li>⚠️ X — Dev/prod parity remains aspirational until SAM local is configured in Lab 4a</li>
+  </ul>
+</section>
+
+<section data-background-color="#146EB4">
+  <h2>Coming Up</h2>
+  <p>Module 4 — AWS Services, Interfacing &amp; Infrastructure as Code. We put theory into practice: build the Cloud Air CloudFormation baseline stack and deploy the monolith to Elastic Beanstalk.</p>
+</section>
+
+</div></div>
+<script src="https://cdn.jsdelivr.net/npm/reveal.js@5.1.0/dist/reveal.js"></script>
+<script>Reveal.initialize({ hash: true, slideNumber: 'c/t', transition: 'fade', width: 1280, height: 800, margin: 0.04, minScale: 0.2, maxScale: 2.0 });</script>
+</body>
+</html>

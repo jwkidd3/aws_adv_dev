@@ -1,0 +1,157 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Module 7 — Microservices &amp; Serverless</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/reveal.js@5.1.0/dist/reset.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/reveal.js@5.1.0/dist/reveal.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/reveal.js@5.1.0/dist/theme/white.css">
+<style>
+  :root { --aws-orange:#FF9900; --aws-navy:#232F3E; --aws-blue:#146EB4; }
+  .reveal h1, .reveal h2, .reveal h3 { color: var(--aws-navy); font-weight: 600; letter-spacing: -0.5px; }
+  .reveal h1 { font-size: 2.2em; }
+  .reveal h2 { font-size: 1.5em; }
+  .reveal h3 { font-size: 1.1em; color: var(--aws-blue); }
+  .reveal section { text-align: left; }
+  .reveal section.title-slide { text-align: center; }
+  .reveal .accent { color: var(--aws-orange); }
+  .reveal ul { line-height: 1.5; }
+  .reveal code { background:#f4f4f4; padding:2px 6px; border-radius:4px; color:#c7254e; }
+  .reveal pre code { display:block; padding:10px 14px; font-size:0.65em; line-height:1.35; }
+  .reveal .small { font-size: 0.7em; color:#555; }
+  .reveal section[data-background-color] h2,
+  .reveal section[data-background-color] p,
+  .reveal section[data-background-color] li { color:#fff; }
+  .reveal .lab-tag { display:inline-block; background:#fff; color:var(--aws-navy);
+    padding:6px 14px; border-radius:20px; font-size:0.6em; font-weight:700;
+    letter-spacing:1px; text-transform:uppercase; }
+</style>
+</head>
+<body>
+<div class="reveal"><div class="slides">
+
+<section class="title-slide">
+  <h1>Module 7</h1>
+  <h3 class="accent">Microservices &amp; Serverless</h3>
+  <p class="small">Why the Cloud Air monolith must change, how microservices solve the problem, and where serverless fits in the decomposition.</p>
+</section>
+
+<section>
+  <h2>The Monolith Pain Points</h2>
+  <ul>
+    <li><strong>Deployment coupling</strong> — a one-line bug fix in payments requires a full Cloud Air release</li>
+    <li><strong>Scaling granularity</strong> — the whole app scales even when only search is under load</li>
+    <li><strong>Technology lock-in</strong> — every team is forced onto the same Python/Flask/Postgres stack</li>
+    <li><strong>Fault blast radius</strong> — an unhandled exception in loyalty brings down booking</li>
+    <li><strong>Long feedback loops</strong> — integration tests take 45 min; deploys require a maintenance window</li>
+  </ul>
+  <p class="small">Cloud Air's ops team currently ships once per quarter because every release is a high-risk all-or-nothing event. Microservices change the unit of deployment.</p>
+</section>
+
+<section>
+  <h2>Microservices — The Core Idea</h2>
+  <ul>
+    <li>Single responsibility: each service owns one bounded context (search, booking, loyalty, payments)</li>
+    <li><strong>Independently deployable</strong> — separate pipeline, separate rollback</li>
+    <li><strong>Independently scalable</strong> — search scales on read; payments scales on write</li>
+    <li>Communicate over well-defined APIs (REST, events, async messages)</li>
+    <li>Own their data store — no shared database between services</li>
+    <li>Small enough for one "two-pizza" team to understand end-to-end</li>
+  </ul>
+</section>
+
+<section>
+  <h2>Microservices Trade-offs</h2>
+  <ul>
+    <li><strong>Gains:</strong> deploy velocity, fault isolation, polyglot stacks, elastic scaling per service</li>
+    <li><strong>Costs:</strong> distributed-systems complexity — network latency, partial failures, eventual consistency</li>
+    <li><strong>Observability debt:</strong> a request that crosses five services needs distributed tracing (X-Ray)</li>
+    <li><strong>Data management:</strong> no cross-service JOINs; views must be projected or aggregated</li>
+    <li><strong>Operational surface:</strong> more things to deploy, monitor, and secure</li>
+  </ul>
+  <p class="small">The correct answer to "should we microservice X?" is never obvious. Start with the seams where teams are already blocked on each other, not with an arbitrary split.</p>
+</section>
+
+<section>
+  <h2>The Serverless Model</h2>
+  <ul>
+    <li><strong>No servers to provision or patch</strong> — the cloud provider manages compute fleet</li>
+    <li><strong>Pay per invocation/duration</strong> — zero cost at zero traffic</li>
+    <li><strong>Scales to zero and back up automatically</strong> — no capacity planning</li>
+    <li>Ideal unit for microservices: one Lambda per domain operation or per API route</li>
+    <li>AWS serverless primitives: <strong>Lambda</strong>, <strong>API Gateway</strong>, <strong>DynamoDB on-demand</strong>, <strong>SQS/SNS/EventBridge</strong>, <strong>Step Functions</strong>, <strong>S3</strong></li>
+  </ul>
+  <p class="small">Serverless does not mean "no operations" — it means operations responsibility shifts from infrastructure to code, configuration, and IAM policy.</p>
+</section>
+
+<section>
+  <h2>Lambda Execution Model</h2>
+  <ul>
+    <li><strong>Event-driven:</strong> invoked by a trigger — API Gateway, SQS, S3, EventBridge, schedules</li>
+    <li><strong>Stateless handler:</strong> each invocation receives an event JSON and a context object</li>
+    <li><strong>Execution environment lifecycle:</strong> Init → Invoke → (warm reuse | Shutdown)</li>
+    <li>Init (cold start): download + unzip package, run module-level code, initialise connections</li>
+    <li>Warm invocation: execution environment reused; connections persist</li>
+    <li>Max duration: 15 min. Memory: 128 MB – 10 GB. vCPU scales linearly with memory.</li>
+  </ul>
+  <p class="small">Cold starts are measured in hundreds of milliseconds for Python. Keep packages lean, initialise SDK clients outside the handler, and use Provisioned Concurrency only when p99 latency matters.</p>
+</section>
+
+<section>
+  <h2>Cloud Air Target Architecture</h2>
+  <ul>
+    <li><strong>Flight Search</strong> — API Gateway → Lambda → DynamoDB (read-heavy, cache-friendly)</li>
+    <li><strong>Booking</strong> — API Gateway → Lambda → Step Functions → Aurora Serverless</li>
+    <li><strong>Loyalty</strong> — EventBridge rule → Lambda → DynamoDB (async, points accrual)</li>
+    <li><strong>Payments</strong> — API Gateway → Lambda → Secrets Manager → Stripe API</li>
+    <li><strong>Notifications</strong> — SNS → Lambda → SES / push</li>
+    <li>Legacy monolith stays alive during migration, fronted by API Gateway as a pass-through proxy</li>
+  </ul>
+  <p class="small">This is the Strangler Fig in practice: new routes resolve to new Lambda functions; unextracted routes proxy to the monolith. The monolith shrinks over time without a big-bang rewrite.</p>
+</section>
+
+<section>
+  <h2>Decomposition Strategy — Domain Boundaries</h2>
+  <ul>
+    <li>Use <strong>Domain-Driven Design</strong> bounded contexts to draw service lines</li>
+    <li>Choose seams that minimise cross-service synchronous calls</li>
+    <li><strong>Data ownership test:</strong> if two services share a table, they are not independent</li>
+    <li>Start with the most independently deployable domain (Cloud Air: Flight Search)</li>
+    <li>Anti-corruption layer: adapter that translates old monolith schema to the new domain model</li>
+  </ul>
+  <p class="small">Conway's Law: your service boundaries will reflect your org chart. If your team owns search, make search a service. Don't let technical convenience override team autonomy.</p>
+</section>
+
+<section>
+  <h2>Serverless Patterns for Cloud Air</h2>
+  <ul>
+    <li><strong>Request-response</strong> — synchronous Lambda invocation via API Gateway (search, booking create)</li>
+    <li><strong>Fan-out</strong> — SNS topic triggers multiple Lambda subscribers (post-booking: loyalty + notifications)</li>
+    <li><strong>Queue worker</strong> — SQS + Lambda event-source mapping (retry-safe, at-least-once)</li>
+    <li><strong>Orchestration</strong> — Step Functions state machine (multi-step booking saga with compensation)</li>
+    <li><strong>Scheduled job</strong> — EventBridge Scheduler → Lambda (nightly loyalty recalculation)</li>
+  </ul>
+</section>
+
+<section>
+  <h2>Why Not Containers for Everything?</h2>
+  <ul>
+    <li>Containers (ECS/EKS) are the right choice when: long-running processes, stateful workloads, GPU, sub-100ms cold-start requirements, or need to package a complex runtime</li>
+    <li>Lambda is the right choice when: event-driven, short-lived, variable or bursty traffic, per-invocation cost model desired</li>
+    <li>Cloud Air uses <strong>both</strong>: the legacy monolith runs on Elastic Beanstalk (managed EC2); new microservices run on Lambda</li>
+    <li>The choice is not ideological — it is operational cost vs. control</li>
+  </ul>
+  <p class="small">Lambda container image support (up to 10 GB) narrows the gap further — you can package any runtime in a Docker image and deploy it as a Lambda function.</p>
+</section>
+
+<section data-background-color="#146EB4">
+  <h2>Coming Up</h2>
+  <p>Module 8 — Microservices with Lambda, API Gateway &amp; SAM. We write, test, and deploy Cloud Air's first extracted microservice using the Serverless Application Model.</p>
+</section>
+
+</div></div>
+<script src="https://cdn.jsdelivr.net/npm/reveal.js@5.1.0/dist/reveal.js"></script>
+<script>Reveal.initialize({ hash: true, slideNumber: 'c/t', transition: 'fade', width: 1280, height: 800, margin: 0.04, minScale: 0.2, maxScale: 2.0 });</script>
+</body>
+</html>

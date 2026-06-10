@@ -1,0 +1,173 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Module 15 — Course Wrap-up</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/reveal.js@5.1.0/dist/reset.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/reveal.js@5.1.0/dist/reveal.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/reveal.js@5.1.0/dist/theme/white.css">
+<style>
+  :root { --aws-orange:#FF9900; --aws-navy:#232F3E; --aws-blue:#146EB4; }
+  .reveal h1, .reveal h2, .reveal h3 { color: var(--aws-navy); font-weight: 600; letter-spacing: -0.5px; }
+  .reveal h1 { font-size: 2.2em; }
+  .reveal h2 { font-size: 1.5em; }
+  .reveal h3 { font-size: 1.1em; color: var(--aws-blue); }
+  .reveal section { text-align: left; }
+  .reveal section.title-slide { text-align: center; }
+  .reveal .accent { color: var(--aws-orange); }
+  .reveal ul { line-height: 1.5; }
+  .reveal .grid { display:grid; grid-template-columns:1fr 1fr; gap:14px 30px; font-size:0.9em; }
+  .reveal .grid div { border-left:4px solid var(--aws-orange); padding-left:10px; }
+  .reveal .small { font-size: 0.7em; color:#555; }
+  .reveal section[data-background-color] h2,
+  .reveal section[data-background-color] p,
+  .reveal section[data-background-color] li { color:#fff; }
+</style>
+</head>
+<body>
+<div class="reveal"><div class="slides">
+
+<section class="title-slide">
+  <h1>Module 15</h1>
+  <h3 class="accent">Course Wrap-up</h3>
+  <p class="small">What Cloud Air became, the principles that got it there, and where to go next.</p>
+</section>
+
+<section>
+  <h2>What Cloud Air Became</h2>
+  <div class="grid">
+    <div>
+      <strong>Before</strong>
+      <ul>
+        <li>Monolithic Java WAR on bare-metal</li>
+        <li>Single PostgreSQL instance</li>
+        <li>Manual deployments, nights and weekends</li>
+        <li>No audit trail, no distributed tracing</li>
+      </ul>
+    </div>
+    <div>
+      <strong>After</strong>
+      <ul>
+        <li>Serverless microservices on Lambda + API Gateway</li>
+        <li>DynamoDB + Aurora Serverless + S3 (polyglot)</li>
+        <li>SAM + CodePipeline CI/CD — deploy in minutes</li>
+        <li>X-Ray service map, structured logs, event audit trail</li>
+      </ul>
+    </div>
+  </div>
+  <p class="small">Every lab advanced one vertical slice of this refactor — not theory, a real working system.</p>
+</section>
+
+<section>
+  <h2>The 6 Rs — Revisited</h2>
+  <ul>
+    <li><strong>Rehost</strong> — lift-and-shift; used in Lab 1 to get the monolith running in EC2/Beanstalk</li>
+    <li><strong>Replatform</strong> — Beanstalk → managed RDS, S3 static assets; minimal code change</li>
+    <li><strong>Repurchase</strong> — swap self-managed auth for Cognito (Lab 7a)</li>
+    <li><strong>Refactor / Re-architect</strong> — the dominant R in this course: microservices, Lambda, DynamoDB, Step Functions, EventBridge</li>
+    <li><strong>Retire</strong> — modules decommissioned as the Strangler Fig replaced them (Lab 4b)</li>
+    <li><strong>Retain</strong> — legacy billing service kept on-prem; connected via VPN + PrivateLink</li>
+  </ul>
+</section>
+
+<section>
+  <h2>Architecture Patterns Applied</h2>
+  <ul>
+    <li><strong>Strangler Fig</strong> — incremental decomposition; traffic proxy routes new paths to Lambda, legacy paths to monolith</li>
+    <li><strong>Saga / Orchestration</strong> — Step Functions coordinates the booking flow with compensating transactions</li>
+    <li><strong>Event Sourcing + CQRS</strong> — DynamoDB Streams drives read-model projections; queries never hit the write store</li>
+    <li><strong>Fan-out</strong> — SNS → SQS queues decouple notification, audit, and analytics consumers</li>
+    <li><strong>Circuit Breaker + DLQ</strong> — failures are isolated; poison pills captured, never lost</li>
+  </ul>
+</section>
+
+<section>
+  <h2>The Twelve-Factor App — Where They Showed Up</h2>
+  <ul>
+    <li><strong>III Config</strong> — SSM Parameter Store + Secrets Manager (Lab 3)</li>
+    <li><strong>IV Backing services</strong> — DynamoDB, SQS, SNS treated as attached resources via env vars</li>
+    <li><strong>VI Processes</strong> — stateless Lambda functions; all state externalised to DynamoDB or S3</li>
+    <li><strong>IX Disposability</strong> — Lambda's cold start = fast startup; graceful shutdown via Lambda Extensions</li>
+    <li><strong>XI Logs</strong> — structured JSON to stdout; CloudWatch aggregates, Logs Insights queries</li>
+  </ul>
+  <p class="small">The Twelve Factors are not a checklist to complete once — they are a lens to apply when designing any new service.</p>
+</section>
+
+<section>
+  <h2>Key Services Mastered</h2>
+  <div class="grid">
+    <div>
+      <strong>Compute &amp; API</strong>
+      <ul>
+        <li>Lambda + Layers + Extensions</li>
+        <li>API Gateway (REST + HTTP)</li>
+        <li>AWS SAM</li>
+      </ul>
+    </div>
+    <div>
+      <strong>Data &amp; Messaging</strong>
+      <ul>
+        <li>DynamoDB single-table design</li>
+        <li>SQS · SNS · Kinesis · EventBridge</li>
+        <li>Step Functions</li>
+      </ul>
+    </div>
+    <div>
+      <strong>Config &amp; Security</strong>
+      <ul>
+        <li>SSM Parameter Store · Secrets Manager</li>
+        <li>Cognito User Pools · JWT authorizer</li>
+        <li>IAM least privilege</li>
+      </ul>
+    </div>
+    <div>
+      <strong>Observability</strong>
+      <ul>
+        <li>X-Ray distributed tracing</li>
+        <li>CloudWatch Logs Insights</li>
+        <li>Lambda Powertools</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<section>
+  <h2>Habits to Carry Forward</h2>
+  <ul>
+    <li>Least privilege every time — policy review is the cheapest security control you have</li>
+    <li>Design access patterns first, schema second — especially true for DynamoDB</li>
+    <li>Everything in IaC — SAM/CloudFormation first; the console is for reading</li>
+    <li>Log structured JSON with correlation IDs from day one — retrofitting observability is expensive</li>
+    <li>Idempotency is not optional in at-least-once delivery systems</li>
+    <li>Small, frequent deploys — the fastest path to confidence and stability</li>
+  </ul>
+</section>
+
+<section>
+  <h2>Certifications &amp; Next Steps</h2>
+  <ul>
+    <li><strong>AWS Certified Developer – Associate (DVA-C02)</strong> — this course covers the majority of exam domains</li>
+    <li><strong>AWS Certified Solutions Architect – Associate</strong> — broader architectural context; natural follow-on</li>
+    <li><strong>Serverless Land</strong> — pattern library and workshop catalog at <code>serverlessland.com</code></li>
+    <li><strong>AWS Lambda Powertools for Python</strong> — production-grade utilities (tracing, logging, idempotency, batch processing)</li>
+    <li><strong>AWS CDK</strong> — define infrastructure in Python/TypeScript; compiles to CloudFormation</li>
+    <li><strong>AWS Well-Architected Tool</strong> — run the review against anything you ship</li>
+  </ul>
+</section>
+
+<section data-background-color="#146EB4">
+  <h2>Thank You</h2>
+  <ul>
+    <li>Fill out the course feedback form — your input shapes the next cohort</li>
+    <li>Keep your Cloud9 workspace — extend it with the patterns you learned</li>
+    <li>Questions after class: office hours details are on the course portal</li>
+  </ul>
+  <p class="small" style="color:#fff">You refactored an airline. Go build something great.</p>
+</section>
+
+</div></div>
+<script src="https://cdn.jsdelivr.net/npm/reveal.js@5.1.0/dist/reveal.js"></script>
+<script>Reveal.initialize({ hash: true, slideNumber: 'c/t', transition: 'fade', width: 1280, height: 800, margin: 0.04, minScale: 0.2, maxScale: 2.0 });</script>
+</body>
+</html>

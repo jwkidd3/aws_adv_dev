@@ -1,0 +1,159 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Module 2 — The Cloud Journey: Monolith &amp; Migration</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/reveal.js@5.1.0/dist/reset.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/reveal.js@5.1.0/dist/reveal.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/reveal.js@5.1.0/dist/theme/white.css">
+<style>
+  :root { --aws-orange:#FF9900; --aws-navy:#232F3E; --aws-blue:#146EB4; }
+  .reveal h1, .reveal h2, .reveal h3 { color: var(--aws-navy); font-weight: 600; letter-spacing: -0.5px; }
+  .reveal h1 { font-size: 2.2em; }
+  .reveal h2 { font-size: 1.5em; }
+  .reveal h3 { font-size: 1.1em; color: var(--aws-blue); }
+  .reveal section { text-align: left; }
+  .reveal section.title-slide { text-align: center; }
+  .reveal .accent { color: var(--aws-orange); }
+  .reveal ul { line-height: 1.5; }
+  .reveal code { background:#f4f4f4; padding:2px 6px; border-radius:4px; color:#c7254e; }
+  .reveal pre code { display:block; padding:10px 14px; font-size:0.65em; line-height:1.35; }
+  .reveal .small { font-size: 0.7em; color:#555; }
+  .reveal .grid2 { display:grid; grid-template-columns:1fr 1fr; gap:14px 24px; font-size:0.85em; }
+  .reveal .grid2 div { border-left:4px solid var(--aws-orange); padding-left:10px; }
+  .reveal .grid3 { display:grid; grid-template-columns:1fr 1fr 1fr; gap:12px 18px; font-size:0.8em; }
+  .reveal .grid3 div { border-left:4px solid var(--aws-blue); padding-left:10px; }
+  .reveal section[data-background-color] h2,
+  .reveal section[data-background-color] p,
+  .reveal section[data-background-color] li { color:#fff; }
+  .reveal .lab-tag { display:inline-block; background:#fff; color:var(--aws-navy);
+    padding:6px 14px; border-radius:20px; font-size:0.6em; font-weight:700;
+    letter-spacing:1px; text-transform:uppercase; }
+</style>
+</head>
+<body>
+<div class="reveal"><div class="slides">
+
+<section class="title-slide">
+  <h1>Module 2</h1>
+  <h3 class="accent">The Cloud Journey: Monolith &amp; Migration</h3>
+  <p class="small">Off-cloud architecture, the Cloud Air monolith, the 6 Rs, and guardrails for the migration ahead.</p>
+</section>
+
+<section>
+  <h2>Cloud Air — The Starting Point</h2>
+  <ul>
+    <li>A single Python/Flask application running on a <strong>bare-metal server in a co-lo</strong></li>
+    <li>One PostgreSQL database — shared by every feature: bookings, inventory, loyalty, payments</li>
+    <li>Deployments require: schedule a maintenance window, quiesce traffic, <code>rsync</code> code, restart <code>gunicorn</code></li>
+    <li>Scaling means calling the data-center team to provision a new box — minimum 2-week lead time</li>
+  </ul>
+  <p class="small">Any of this sound familiar? This is the architecture this course is designed to retire.</p>
+</section>
+
+<section>
+  <h2>Monolith Pain Points</h2>
+  <div class="grid2">
+    <div><strong>Tight coupling</strong><br><span class="small">A change in the loyalty module requires a full-stack regression test for bookings</span></div>
+    <div><strong>Scaling bottleneck</strong><br><span class="small">Seasonal peak (holidays) demands 10× capacity for the search service; you scale everything</span></div>
+    <div><strong>Long release cycles</strong><br><span class="small">Feature flags are a spreadsheet. Rollbacks mean reverting the whole app</span></div>
+    <div><strong>Single point of failure</strong><br><span class="small">DB connection pool exhaustion during a booking surge takes down the loyalty portal too</span></div>
+  </div>
+</section>
+
+<section>
+  <h2>Off-Cloud to Cloud: The Migration Decision</h2>
+  <ul>
+    <li><strong>Trigger:</strong> co-location contract renewal + aggressive SLA commitments Cloud Air can't meet on current infrastructure</li>
+    <li><strong>Goal:</strong> elastic scale, independent deployability, observability — without a "big bang" rewrite</li>
+    <li>The migration will be incremental — the monolith stays in service while individual capabilities are extracted</li>
+  </ul>
+  <p class="small">This is not a lift-and-shift exercise. The architecture will change. The application contract (REST API) stays stable for external consumers throughout.</p>
+</section>
+
+<section>
+  <h2>The 6 Rs of Migration</h2>
+  <div class="grid3">
+    <div><strong>Retire</strong><br><span class="small">Decommission what's no longer needed</span></div>
+    <div><strong>Retain</strong><br><span class="small">Keep on-premises for now (compliance, latency)</span></div>
+    <div><strong>Rehost</strong><br><span class="small">Lift-and-shift to EC2 — fast, low risk, low reward</span></div>
+    <div><strong>Replatform</strong><br><span class="small">Lift-tinker-shift, e.g. move to RDS without code changes</span></div>
+    <div><strong>Repurchase</strong><br><span class="small">Move to SaaS (e.g. replace CRM with Salesforce)</span></div>
+    <div><strong>Refactor / Re-architect</strong><br><span class="small">Decompose into microservices — highest cost, highest ROI</span></div>
+  </div>
+  <p class="small">Cloud Air's booking engine: <strong>Refactor</strong>. Its legacy reporting tool: <strong>Retire</strong>. Its compliance archive: <strong>Retain</strong> on-premises for now.</p>
+</section>
+
+<section>
+  <h2>Cloud Air Migration Phases</h2>
+  <ul>
+    <li><strong>Phase 0 — Environment &amp; IaC baseline (Lab 1 &amp; 2):</strong> Cloud9, CLI/SDK smoke test, CloudFormation stack, Elastic Beanstalk monolith deploy</li>
+    <li><strong>Phase 1 — Twelve-Factor compliance (Lab 3):</strong> Externalise config to SSM; migrate secrets to Secrets Manager</li>
+    <li><strong>Phase 2 — First microservice extraction (Lab 4):</strong> Lambda + API Gateway flight-search service; Strangler Fig proxy routes around the monolith</li>
+    <li><strong>Phase 3 — Persistence &amp; orchestration (Labs 5–6):</strong> DynamoDB replaces the shared DB; Step Functions; event-driven messaging</li>
+    <li><strong>Phase 4 — Secure &amp; observe (Lab 7):</strong> Cognito JWT, X-Ray tracing, full cleanup</li>
+  </ul>
+</section>
+
+<section>
+  <h2>AWS Migration Guardrails</h2>
+  <ul>
+    <li><strong>IAM permission boundary</strong> — student roles scoped to <code>us-east-1</code> via <code>RestrictToUsEast1</code> policy; prevents runaway resource creation</li>
+    <li><strong>Resource tagging</strong> — all resources require <code>Owner: cloudair-userN</code> tag; enables cost attribution and automated cleanup</li>
+    <li><strong>Service Control Policies (SCPs)</strong> — org-level guardrails block certain high-cost or out-of-scope services entirely</li>
+    <li><strong>AWS Config rules</strong> — continuous compliance checks flag untagged or public-access resources immediately</li>
+  </ul>
+  <p class="small">Guardrails are not bureaucracy — they are the contractual boundary that lets you move fast without wrecking a shared environment.</p>
+</section>
+
+<section>
+  <h2>The Cloud Air Target Architecture</h2>
+  <ul>
+    <li><strong>API Gateway</strong> — single external entry point; routes per path prefix to microservices or the legacy proxy</li>
+    <li><strong>Lambda functions</strong> — stateless, independently deployed; one per bounded context (search, booking, loyalty, payment)</li>
+    <li><strong>DynamoDB</strong> — single-table design per service; no shared DB</li>
+    <li><strong>SQS / SNS / EventBridge</strong> — async event bus replaces synchronous inter-module calls</li>
+    <li><strong>Step Functions</strong> — orchestrates multi-step booking saga with rollback</li>
+  </ul>
+  <p class="small">The monolith is the starting point, not the destination. Each Lab advances the decomposition.</p>
+</section>
+
+<section>
+  <h2>Developer Environment Setup</h2>
+  <pre><code># Lab 1a: clone course repo into Cloud9 workspace
+cd ~/environment
+git clone https://github.com/jwkidd3/aws_adv_dev aws-adv-dev
+
+# Source the shared env file — sets USER_ID, AWS_REGION, ACCT
+source ~/.aws-adv-dev.env
+echo "Working as $USER_ID in $AWS_REGION"
+
+# Lab 1b: verify CLI + SDK credentials via instance role
+aws sts get-caller-identity
+python3 -c "import boto3; \
+  print(boto3.client('sts').get_caller_identity()['Arn'])"</code></pre>
+  <p class="small">Cloud9 manages temporary credentials automatically. No <code>aws configure</code> needed. If <code>get-caller-identity</code> returns your role ARN, you're ready.</p>
+</section>
+
+<section data-background-color="#FF9900">
+  <span class="lab-tag">Hands-On Lab Block · 3 × ~30 min</span>
+  <h2>🧪 Labs 1a · 1b · 1c</h2>
+  <ul>
+    <li><strong>1a — Sign-in &amp; Cloud9 Orientation.</strong> Log in to the shared account, launch your Cloud9 environment, clone the course repo, source the env file.</li>
+    <li><strong>1b — CLI &amp; SDK Profile.</strong> Verify credentials via <code>aws sts get-caller-identity</code>; run <code>smoke_test.py</code>; explore the Cloud Air repo layout.</li>
+    <li><strong>1c — IAM Policy Authoring.</strong> Inspect the <code>RestrictToUsEast1</code> boundary; write a least-privilege policy for a hypothetical CI/CD role; validate with IAM Access Analyzer.</li>
+  </ul>
+  <p class="small"><code>labs/lab1a-signin-orientation.md · lab1b-cli-sdk-profile.md · lab1c-iam-policy.md</code></p>
+</section>
+
+<section data-background-color="#146EB4">
+  <h2>Coming Up</h2>
+  <p>Module 3 — The Twelve-Factor App. We map the 12 factors against the Cloud Air codebase to understand exactly what needs to change before we write a line of migration code.</p>
+</section>
+
+</div></div>
+<script src="https://cdn.jsdelivr.net/npm/reveal.js@5.1.0/dist/reveal.js"></script>
+<script>Reveal.initialize({ hash: true, slideNumber: 'c/t', transition: 'fade', width: 1280, height: 800, margin: 0.04, minScale: 0.2, maxScale: 2.0 });</script>
+</body>
+</html>

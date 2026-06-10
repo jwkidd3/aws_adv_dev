@@ -1,0 +1,169 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Module 9 — Strangling the Monolith</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/reveal.js@5.1.0/dist/reset.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/reveal.js@5.1.0/dist/reveal.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/reveal.js@5.1.0/dist/theme/white.css">
+<style>
+  :root { --aws-orange:#FF9900; --aws-navy:#232F3E; --aws-blue:#146EB4; }
+  .reveal h1, .reveal h2, .reveal h3 { color: var(--aws-navy); font-weight: 600; letter-spacing: -0.5px; }
+  .reveal h1 { font-size: 2.2em; }
+  .reveal h2 { font-size: 1.5em; }
+  .reveal h3 { font-size: 1.1em; color: var(--aws-blue); }
+  .reveal section { text-align: left; }
+  .reveal section.title-slide { text-align: center; }
+  .reveal .accent { color: var(--aws-orange); }
+  .reveal ul { line-height: 1.5; }
+  .reveal code { background:#f4f4f4; padding:2px 6px; border-radius:4px; color:#c7254e; }
+  .reveal pre code { display:block; padding:10px 14px; font-size:0.65em; line-height:1.35; }
+  .reveal .small { font-size: 0.7em; color:#555; }
+  .reveal section[data-background-color] h2,
+  .reveal section[data-background-color] p,
+  .reveal section[data-background-color] li { color:#fff; }
+  .reveal .lab-tag { display:inline-block; background:#fff; color:var(--aws-navy);
+    padding:6px 14px; border-radius:20px; font-size:0.6em; font-weight:700;
+    letter-spacing:1px; text-transform:uppercase; }
+</style>
+</head>
+<body>
+<div class="reveal"><div class="slides">
+
+<section class="title-slide">
+  <h1>Module 9</h1>
+  <h3 class="accent">Strangling the Monolith</h3>
+  <p class="small">Incremental decomposition of the Cloud Air legacy app using the Strangler Fig pattern — zero big-bang rewrites, continuous delivery throughout.</p>
+</section>
+
+<section>
+  <h2>The Strangler Fig Pattern</h2>
+  <ul>
+    <li>Named after the tropical fig that grows around a host tree, eventually replacing it</li>
+    <li><strong>Core idea:</strong> route new functionality and extracted endpoints to the new system; proxy everything else to the old system</li>
+    <li>The monolith shrinks incrementally; the new system grows; at some point the monolith is empty and is decommissioned</li>
+    <li>Business continues operating throughout — no freeze, no flag day</li>
+    <li>Each extraction is independently reversible (re-route back to the monolith if the new service fails)</li>
+  </ul>
+  <p class="small">Martin Fowler coined the pattern in 2004, drawing the analogy from strangler figs in Queensland. The botanical metaphor holds: the host tree (monolith) provides support while the new organism (services) matures.</p>
+</section>
+
+<section>
+  <h2>The Facade / Proxy Layer</h2>
+  <ul>
+    <li>A single entry point intercepts all requests before they reach the monolith</li>
+    <li>For Cloud Air: <strong>API Gateway</strong> acts as the facade</li>
+    <li>Routes that have been extracted → Lambda integrations</li>
+    <li>Routes not yet extracted → <code>HTTP_PROXY</code> integration to the Beanstalk monolith URL</li>
+    <li>Clients see one hostname; internal routing is invisible to them</li>
+    <li>Over time: add more Lambda routes, shrink the proxy routes</li>
+  </ul>
+  <pre><code># SAM — proxy catch-all to legacy monolith
+LegacyProxy:
+  Type: HttpApi
+  Properties:
+    RouteKey: "ANY /{proxy+}"
+    Integration:
+      Type: HTTP_PROXY
+      Uri: !Sub "http://${MonolithUrl}/{proxy}"
+      Method: ANY</code></pre>
+</section>
+
+<section>
+  <h2>Anti-Corruption Layer (ACL)</h2>
+  <ul>
+    <li>The monolith's domain model is often tangled — IDs as strings, denormalised data, legacy naming</li>
+    <li>An <strong>Anti-Corruption Layer</strong> (from DDD) translates between the legacy model and the new service's clean domain model</li>
+    <li>Implemented as a thin adapter in the Lambda function or as a dedicated translation Lambda</li>
+    <li>Prevents the new service from inheriting the monolith's design flaws</li>
+    <li>When the monolith is finally decommissioned, the ACL is removed — not refactored</li>
+  </ul>
+  <p class="small">Example: Cloud Air monolith stores <code>flight_id</code> as a 12-char alphanumeric legacy PNR. The new Flight Search service uses a structured UUID. The ACL translates at the boundary.</p>
+</section>
+
+<section>
+  <h2>Extraction Sequence — Cloud Air</h2>
+  <ol>
+    <li><strong>Flight Search</strong> (Lab 4a) — highest read volume, no writes, easiest to isolate</li>
+    <li><strong>Loyalty Points read</strong> — read-only projection, decouple DB first</li>
+    <li><strong>Booking Create</strong> — requires Step Functions orchestration (Lab 5b)</li>
+    <li><strong>Payments</strong> — extract after secrets management is in place (already done — Lab 3)</li>
+    <li><strong>Notifications</strong> — async; fan-out via SNS (Lab 6)</li>
+    <li><strong>Admin / reporting</strong> — last; lowest business priority, most internal coupling</li>
+  </ol>
+  <p class="small">The ordering is not arbitrary — it follows the dependency graph and the risk profile. Extract leaf nodes first; extract nodes with many dependencies last.</p>
+</section>
+
+<section>
+  <h2>Traffic Shifting Strategies</h2>
+  <ul>
+    <li><strong>Hard cutover</strong> — update the API GW route; instant 100% switch. Simple but highest risk.</li>
+    <li><strong>Lambda weighted aliases</strong> — split traffic between two Lambda function versions (<code>prod:BLUE</code> vs <code>prod:GREEN</code>); shift weight gradually</li>
+    <li><strong>Feature flags via SSM</strong> — handler reads a flag; routes internally to old or new implementation path</li>
+    <li><strong>Shadow mode</strong> — proxy still serves the response, but new Lambda is invoked async for comparison logging</li>
+  </ul>
+  <pre><code>aws lambda update-alias \
+  --function-name cloudair-$USER_ID-search \
+  --name prod \
+  --routing-config AdditionalVersionWeights={"2"=0.10}</code></pre>
+</section>
+
+<section>
+  <h2>Data Separation — Breaking the Shared Database</h2>
+  <ul>
+    <li>The hardest part of strangling: shared schema means a single change can break multiple services</li>
+    <li><strong>Step 1:</strong> identify which tables a service owns vs. which it reads from others</li>
+    <li><strong>Step 2:</strong> create a read replica / projection in the new service's store (DynamoDB)</li>
+    <li><strong>Step 3:</strong> migrate writes to go through the new service's API; retire direct DB calls from the monolith</li>
+    <li><strong>Step 4:</strong> remove the shared table access from the monolith IAM policy</li>
+  </ul>
+  <p class="small">Cloud Air's loyalty table is the first to split: the new Loyalty Lambda writes to its own DynamoDB table; the monolith reads via the Loyalty API rather than the shared DB.</p>
+</section>
+
+<section>
+  <h2>Observability During Migration</h2>
+  <ul>
+    <li>Deploy X-Ray tracing on both the monolith (Beanstalk) and the Lambda functions</li>
+    <li>Ensure trace IDs propagate through API Gateway → Lambda → downstream services</li>
+    <li>Compare <code>p50</code> / <code>p99</code> latency before and after extraction to detect regression</li>
+    <li>CloudWatch alarms on Lambda error rate; auto-rollback via CodeDeploy Lambda deployment</li>
+    <li>Structured logs: add <code>route</code>, <code>version</code>, <code>user_id</code> to every log line</li>
+  </ul>
+  <p class="small">You cannot safely strangulate a monolith without being able to compare the behaviour of old and new paths at runtime. Instrumentation is a pre-requisite, not an afterthought.</p>
+</section>
+
+<section>
+  <h2>Cloud Air — Current Extraction State</h2>
+  <ul>
+    <li>After Lab 4b: Flight Search is served by Lambda; all other routes proxy to Beanstalk</li>
+    <li>API Gateway is the single entry point — DNS unchanged for all clients</li>
+    <li>Monolith still owns the Aurora DB; new Lambda has its own DynamoDB flights table</li>
+    <li>Next: Booking service extraction will require Step Functions for saga orchestration (Module 11)</li>
+    <li>The Beanstalk environment remains live; its route weight diminishes with each extraction</li>
+  </ul>
+  <p class="small">By the end of Day 3, the Cloud Air monolith handles only the admin routes. Everything customer-facing runs on Lambda. That is a complete Strangler Fig in three days.</p>
+</section>
+
+<section data-background-color="#FF9900">
+  <span class="lab-tag">Hands-On Lab · 35 min</span>
+  <h2>🧪 Lab 4b — Strangler Routing</h2>
+  <ul>
+    <li>Add an <code>HTTP_PROXY</code> catch-all route to the API Gateway stack from Lab 4a, pointing to the Beanstalk monolith URL</li>
+    <li>Verify: <code>GET /flights/{origin}/{dest}</code> → Lambda; <code>POST /bookings</code> → monolith</li>
+    <li>Toggle a SSM feature flag to redirect search back to the monolith; confirm the flag works; toggle back</li>
+    <li>Add a Lambda weighted alias and shift 10% of search traffic to a v2 handler; inspect CloudWatch metrics</li>
+  </ul>
+  <p class="small"><code>labs/lab4b-strangler-routing.md</code></p>
+</section>
+
+<section data-background-color="#146EB4">
+  <h2>Coming Up</h2>
+  <p>Module 10 — Polyglot Persistence &amp; DynamoDB Best Practices. The Flight Search service needs a high-throughput, low-latency data store — we design the single-table model that will serve it.</p>
+</section>
+
+</div></div>
+<script src="https://cdn.jsdelivr.net/npm/reveal.js@5.1.0/dist/reveal.js"></script>
+<script>Reveal.initialize({ hash: true, slideNumber: 'c/t', transition: 'fade', width: 1280, height: 800, margin: 0.04, minScale: 0.2, maxScale: 2.0 });</script>
+</body>
+</html>

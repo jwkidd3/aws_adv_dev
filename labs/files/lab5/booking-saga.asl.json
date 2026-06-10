@@ -1,0 +1,108 @@
+{
+  "Comment": "Cloud Air booking saga — ReserveSeat -> ChargePayment -> ConfirmBooking with compensating CancelReservation on failure",
+  "StartAt": "ReserveSeat",
+  "States": {
+    "ReserveSeat": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::lambda:invoke",
+      "Parameters": {
+        "FunctionName": "${ReserveSeatFunctionArn}",
+        "Payload.$": "$"
+      },
+      "ResultPath": "$.reservationResult",
+      "Retry": [
+        {
+          "ErrorEquals": ["Lambda.ServiceException", "Lambda.AWSLambdaException"],
+          "IntervalSeconds": 2,
+          "MaxAttempts": 2,
+          "BackoffRate": 2.0
+        }
+      ],
+      "Catch": [
+        {
+          "ErrorEquals": ["SeatUnavailableError", "States.ALL"],
+          "ResultPath": "$.error",
+          "Next": "BookingFailed"
+        }
+      ],
+      "Next": "ChargePayment"
+    },
+    "ChargePayment": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::lambda:invoke",
+      "Parameters": {
+        "FunctionName": "${ChargePaymentFunctionArn}",
+        "Payload.$": "$"
+      },
+      "ResultPath": "$.paymentResult",
+      "Retry": [
+        {
+          "ErrorEquals": ["Lambda.ServiceException", "Lambda.AWSLambdaException"],
+          "IntervalSeconds": 2,
+          "MaxAttempts": 2,
+          "BackoffRate": 2.0
+        }
+      ],
+      "Catch": [
+        {
+          "ErrorEquals": ["PaymentDeclinedError", "States.ALL"],
+          "ResultPath": "$.error",
+          "Next": "CancelReservation"
+        }
+      ],
+      "Next": "ConfirmBooking"
+    },
+    "ConfirmBooking": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::lambda:invoke",
+      "Parameters": {
+        "FunctionName": "${ConfirmBookingFunctionArn}",
+        "Payload.$": "$"
+      },
+      "ResultPath": "$.confirmResult",
+      "Retry": [
+        {
+          "ErrorEquals": ["Lambda.ServiceException", "Lambda.AWSLambdaException"],
+          "IntervalSeconds": 2,
+          "MaxAttempts": 3,
+          "BackoffRate": 2.0
+        }
+      ],
+      "Catch": [
+        {
+          "ErrorEquals": ["States.ALL"],
+          "ResultPath": "$.error",
+          "Next": "CancelReservation"
+        }
+      ],
+      "Next": "BookingConfirmed"
+    },
+    "CancelReservation": {
+      "Type": "Task",
+      "Comment": "Compensating transaction — rolls back the seat hold created by ReserveSeat",
+      "Resource": "arn:aws:states:::lambda:invoke",
+      "Parameters": {
+        "FunctionName": "${CancelReservationFunctionArn}",
+        "Payload.$": "$"
+      },
+      "ResultPath": "$.cancelResult",
+      "Retry": [
+        {
+          "ErrorEquals": ["Lambda.ServiceException", "Lambda.AWSLambdaException"],
+          "IntervalSeconds": 5,
+          "MaxAttempts": 3,
+          "BackoffRate": 2.0
+        }
+      ],
+      "Next": "BookingFailed"
+    },
+    "BookingConfirmed": {
+      "Type": "Succeed"
+    },
+    "BookingFailed": {
+      "Type": "Fail",
+      "Error": "BookingFailed",
+      "Cause": "Booking workflow terminated — see $.error for details"
+    }
+  }
+}

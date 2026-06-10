@@ -1,0 +1,196 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Module 12 — Decentralized Data &amp; Messaging</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/reveal.js@5.1.0/dist/reset.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/reveal.js@5.1.0/dist/reveal.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/reveal.js@5.1.0/dist/theme/white.css">
+<style>
+  :root { --aws-orange:#FF9900; --aws-navy:#232F3E; --aws-blue:#146EB4; }
+  .reveal h1, .reveal h2, .reveal h3 { color: var(--aws-navy); font-weight: 600; letter-spacing: -0.5px; }
+  .reveal h1 { font-size: 2.2em; }
+  .reveal h2 { font-size: 1.5em; }
+  .reveal h3 { font-size: 1.1em; color: var(--aws-blue); }
+  .reveal section { text-align: left; }
+  .reveal section.title-slide { text-align: center; }
+  .reveal .accent { color: var(--aws-orange); }
+  .reveal ul { line-height: 1.5; }
+  .reveal code { background:#f4f4f4; padding:2px 6px; border-radius:4px; color:#c7254e; }
+  .reveal pre code { display:block; padding:10px 14px; font-size:0.65em; line-height:1.35; }
+  .reveal .small { font-size: 0.7em; color:#555; }
+  .reveal section[data-background-color] h2,
+  .reveal section[data-background-color] p,
+  .reveal section[data-background-color] li { color:#fff; }
+  .reveal .lab-tag { display:inline-block; background:#fff; color:var(--aws-navy);
+    padding:6px 14px; border-radius:20px; font-size:0.6em; font-weight:700;
+    letter-spacing:1px; text-transform:uppercase; }
+</style>
+</head>
+<body>
+<div class="reveal"><div class="slides">
+
+<section class="title-slide">
+  <h1>Module 12</h1>
+  <h3 class="accent">Decentralized Data &amp; Messaging</h3>
+  <p class="small">SQS, SNS, Kinesis, IoT, and EventBridge — decoupling Cloud Air's services so failures don't cascade.</p>
+</section>
+
+<section>
+  <h2>Decentralized Data in Microservices</h2>
+  <ul>
+    <li>Each microservice owns its data store — no shared database, no shared schema</li>
+    <li>Cross-service queries become <strong>async messaging</strong> or <strong>API calls</strong> — never direct DB joins</li>
+    <li>Data consistency shifts from ACID transactions to <strong>eventual consistency</strong> via events</li>
+    <li>The Cloud Air monolith had one PostgreSQL instance; the microservices split it across DynamoDB (bookings), Aurora Serverless (billing), S3 (manifests)</li>
+  </ul>
+  <p class="small">The right question is not "which DB?" but "which service owns this data?" — ownership determines messaging topology.</p>
+</section>
+
+<section>
+  <h2>Amazon SQS — Reliable Queuing</h2>
+  <ul>
+    <li><strong>Standard queues</strong> — nearly unlimited throughput, at-least-once delivery, best-effort ordering</li>
+    <li><strong>FIFO queues</strong> — exactly-once processing, strict ordering within message group</li>
+    <li>Visibility timeout decouples receive from delete — consumer has time to process before the message reappears</li>
+    <li>Dead-letter queues (DLQ) capture messages that exceed <code>maxReceiveCount</code> — prevents poison-pill loops</li>
+    <li>Lambda event source mapping polls SQS automatically — no polling code needed</li>
+  </ul>
+  <p class="small">SQS is the right choice when <em>one</em> consumer should process each message (point-to-point). For fan-out, pair with SNS.</p>
+</section>
+
+<section>
+  <h2>SQS with boto3</h2>
+  <pre><code class="language-python">import boto3, os, json
+
+sqs = boto3.client("sqs", region_name="us-east-1")
+Q_URL = os.environ["BOOKING_QUEUE_URL"]
+
+# Producer — enqueue a booking request
+sqs.send_message(
+    QueueUrl=Q_URL,
+    MessageBody=json.dumps({"bookingId": "BK-007", "seats": 2}),
+    MessageAttributes={
+        "eventType": {"StringValue": "BookingRequested", "DataType": "String"}
+    }
+)
+
+# Consumer — receive and delete
+msgs = sqs.receive_message(QueueUrl=Q_URL, MaxNumberOfMessages=5,
+                            WaitTimeSeconds=20)["Messages"]
+for m in msgs:
+    process(json.loads(m["Body"]))
+    sqs.delete_message(QueueUrl=Q_URL, ReceiptHandle=m["ReceiptHandle"])</code></pre>
+  <p class="small">Long-polling (<code>WaitTimeSeconds=20</code>) reduces empty receives and API cost. Always delete after successful processing.</p>
+</section>
+
+<section>
+  <h2>Amazon SNS — Pub/Sub Fan-out</h2>
+  <ul>
+    <li>Topics deliver one message to <em>N</em> subscribers simultaneously: SQS queues, Lambda, HTTP/S, email, SMS, mobile push</li>
+    <li><strong>Message filtering</strong> — subscribers declare a JSON filter policy; SNS evaluates before delivery — saves Lambda invocations</li>
+    <li><strong>SNS → SQS fan-out</strong> — canonical pattern: one SNS topic fans out to per-consumer SQS queues, giving each service an independent, buffered feed</li>
+    <li>FIFO topics + FIFO queues for ordered fan-out with exactly-once semantics</li>
+  </ul>
+  <pre><code class="language-python">sns = boto3.client("sns", region_name="us-east-1")
+sns.publish(
+    TopicArn=os.environ["BOOKING_TOPIC_ARN"],
+    Message=json.dumps({"bookingId": "BK-007", "status": "CONFIRMED"}),
+    MessageAttributes={"eventType": {"DataType": "String",
+                                      "StringValue": "booking.confirmed"}}
+)</code></pre>
+</section>
+
+<section>
+  <h2>Amazon Kinesis Data Streams</h2>
+  <ul>
+    <li>Ordered, partitioned stream — records are retained up to 365 days (replay at any time)</li>
+    <li><strong>Shard</strong> — unit of capacity: 1 MB/s in, 2 MB/s out per consumer; scale by resharding</li>
+    <li>Partition key determines shard placement — use <code>passengerId</code> to keep per-passenger events in order</li>
+    <li>Multiple <strong>enhanced fan-out consumers</strong> each get 2 MB/s — no throughput sharing</li>
+    <li>Lambda event source: checkpointed automatically; failed batch goes to DLQ or bisection mode</li>
+  </ul>
+  <p class="small">Kinesis vs SQS: choose Kinesis when you need replay, ordered per-entity processing, or multiple independent consumers reading the same stream at their own pace.</p>
+</section>
+
+<section>
+  <h2>AWS IoT Message Broker</h2>
+  <ul>
+    <li>MQTT/HTTPS broker for device-to-cloud and cloud-to-device messaging at scale</li>
+    <li><strong>Rules Engine</strong> — SQL-like rules route messages to Lambda, Kinesis, DynamoDB, S3, SNS</li>
+    <li>Cloud Air cabin IoT: seat sensors publish telemetry to <code>cloudair/cabin/+/seat</code>; rules route anomalies to the maintenance Lambda</li>
+    <li>Thing Registry + X.509 certificates + IoT policies enforce per-device authorization</li>
+  </ul>
+  <pre><code class="language-json">{
+  "sql": "SELECT *, topic(3) AS seatId FROM 'cloudair/cabin/+/seat' WHERE temp > 35",
+  "actions": [{
+    "lambda": { "functionArn": "arn:aws:lambda:us-east-1:ACCT:function:cloudair-seat-alert" }
+  }]
+}</code></pre>
+</section>
+
+<section>
+  <h2>Amazon EventBridge</h2>
+  <ul>
+    <li>Serverless event bus — producers emit events; rules route to targets (Lambda, SQS, Step Functions, API destinations)</li>
+    <li><strong>Event pattern matching</strong> — rules filter on any field in the event JSON, reducing noisy Lambda invocations</li>
+    <li><strong>Schema Registry</strong> — auto-discover and version event schemas; generate SDK bindings</li>
+    <li><strong>Archive &amp; replay</strong> — store all events; replay to test new consumers against historical data</li>
+    <li><strong>Cross-account / cross-region</strong> — event buses connect separate AWS accounts cleanly</li>
+  </ul>
+  <p class="small">EventBridge is the preferred choreography spine for Cloud Air's inter-service domain events — decoupled by design, no consumer list in the producer.</p>
+</section>
+
+<section>
+  <h2>Publishing to EventBridge</h2>
+  <pre><code class="language-python">events = boto3.client("events", region_name="us-east-1")
+
+events.put_events(Entries=[{
+    "Source":       "cloudair.booking",
+    "DetailType":   "booking.confirmed",
+    "Detail": json.dumps({
+        "bookingId":   "BK-007",
+        "passengerId": "u42",
+        "flightId":    "CA-404",
+        "seats":       2
+    }),
+    "EventBusName": f"cloudair-{os.environ['USER_ID']}-bus"
+}])</code></pre>
+  <p class="small">Producers know nothing about consumers. Adding a new downstream service means adding a new EventBridge rule — zero producer changes.</p>
+</section>
+
+<section>
+  <h2>Choosing the Right Service</h2>
+  <ul>
+    <li><strong>SQS</strong> — point-to-point queuing, buffering, load leveling, DLQ for poison pills</li>
+    <li><strong>SNS</strong> — push fan-out to multiple heterogeneous endpoints simultaneously</li>
+    <li><strong>Kinesis</strong> — ordered streams, replay, multiple independent consumers, high-throughput analytics</li>
+    <li><strong>IoT Core</strong> — device connectivity, MQTT, rules-based routing from edge to cloud</li>
+    <li><strong>EventBridge</strong> — domain events between services, schema registry, cross-account routing, SaaS integrations</li>
+  </ul>
+  <p class="small">These are not mutually exclusive — SNS → SQS fan-out into EventBridge rules is a valid and common pattern for Cloud Air's notification pipeline.</p>
+</section>
+
+<section data-background-color="#FF9900">
+  <span class="lab-tag">Hands-On Lab Block · 45 min</span>
+  <h2>🧪 Lab 6a — SQS + SNS Fan-out</h2>
+  <ul>
+    <li>Create an SNS topic and two SQS subscriber queues (notifications, audit) with filter policies</li>
+    <li>Publish a <code>booking.confirmed</code> event via SNS and verify per-queue delivery</li>
+    <li>Wire a Lambda consumer to the notifications queue; trigger via SQS event source mapping</li>
+    <li>Simulate a processing failure; verify DLQ receives the message after <code>maxReceiveCount</code></li>
+  </ul>
+  <p class="small"><code>labs/lab6a-sqs-sns.md</code></p>
+</section>
+
+<section data-background-color="#146EB4">
+  <h2>Coming Up</h2>
+  <p>Module 13 — Event Sourcing, CQRS &amp; Designing for Resilience. We formalize the event-driven model, handle idempotency, and design Cloud Air to fail gracefully.</p>
+</section>
+
+</div></div>
+<script src="https://cdn.jsdelivr.net/npm/reveal.js@5.1.0/dist/reveal.js"></script>
+<script>Reveal.initialize({ hash: true, slideNumber: 'c/t', transition: 'fade', width: 1280, height: 800, margin: 0.04, minScale: 0.2, maxScale: 2.0 });</script>
+</body>
+</html>

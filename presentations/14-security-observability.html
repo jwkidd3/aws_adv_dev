@@ -1,0 +1,192 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Module 14 — Security &amp; Observability</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/reveal.js@5.1.0/dist/reset.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/reveal.js@5.1.0/dist/reveal.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/reveal.js@5.1.0/dist/theme/white.css">
+<style>
+  :root { --aws-orange:#FF9900; --aws-navy:#232F3E; --aws-blue:#146EB4; }
+  .reveal h1, .reveal h2, .reveal h3 { color: var(--aws-navy); font-weight: 600; letter-spacing: -0.5px; }
+  .reveal h1 { font-size: 2.2em; }
+  .reveal h2 { font-size: 1.5em; }
+  .reveal h3 { font-size: 1.1em; color: var(--aws-blue); }
+  .reveal section { text-align: left; }
+  .reveal section.title-slide { text-align: center; }
+  .reveal .accent { color: var(--aws-orange); }
+  .reveal ul { line-height: 1.5; }
+  .reveal code { background:#f4f4f4; padding:2px 6px; border-radius:4px; color:#c7254e; }
+  .reveal pre code { display:block; padding:10px 14px; font-size:0.65em; line-height:1.35; }
+  .reveal .small { font-size: 0.7em; color:#555; }
+  .reveal section[data-background-color] h2,
+  .reveal section[data-background-color] p,
+  .reveal section[data-background-color] li { color:#fff; }
+  .reveal .lab-tag { display:inline-block; background:#fff; color:var(--aws-navy);
+    padding:6px 14px; border-radius:20px; font-size:0.6em; font-weight:700;
+    letter-spacing:1px; text-transform:uppercase; }
+</style>
+</head>
+<body>
+<div class="reveal"><div class="slides">
+
+<section class="title-slide">
+  <h1>Module 14</h1>
+  <h3 class="accent">Security &amp; Observability</h3>
+  <p class="small">Locking down Cloud Air with Cognito authorization and making every distributed call traceable with X-Ray.</p>
+</section>
+
+<section>
+  <h2>Lambda Security Foundations</h2>
+  <ul>
+    <li><strong>Execution role</strong> — least-privilege IAM role assumed by every Lambda invocation; no ambient credentials</li>
+    <li><strong>Resource-based policy</strong> — controls <em>who</em> can invoke the function (API Gateway, EventBridge, SQS)</li>
+    <li><strong>VPC placement</strong> — optionally attach Lambda to a VPC for private resource access; adds cold-start latency, requires NAT or VPC endpoints for AWS API calls</li>
+    <li><strong>Environment variable encryption</strong> — KMS CMK encrypts env vars at rest; avoid plaintext secrets — use Secrets Manager instead</li>
+    <li><strong>Code signing</strong> — enforce that only signed packages from trusted CodeArtifact sources can be deployed</li>
+  </ul>
+  <p class="small">Least privilege is not optional — over-permissioned Lambda functions are the single most common serverless security finding.</p>
+</section>
+
+<section>
+  <h2>Amazon Cognito — User Identity for Cloud Air</h2>
+  <ul>
+    <li><strong>User Pool</strong> — directory of users; handles sign-up, sign-in, MFA, password policies, forgot-password flows</li>
+    <li><strong>Identity Pool</strong> — exchanges tokens for temporary AWS credentials; enables direct AWS service access from the client</li>
+    <li>OAuth 2.0 / OIDC flows: Authorization Code (web apps), Client Credentials (service-to-service), Implicit (legacy — avoid)</li>
+    <li>Hosted UI provides a drop-in sign-in page; custom domain + CNAME for branding</li>
+    <li>Triggers: pre-authentication Lambda, post-confirmation Lambda, pre-token-generation — customize the auth flow without forking Cognito</li>
+  </ul>
+</section>
+
+<section>
+  <h2>JWT Authorizer on API Gateway</h2>
+  <pre><code class="language-yaml"># SAM template excerpt
+CloudAirApi:
+  Type: AWS::Serverless::Api
+  Properties:
+    StageName: prod
+    Auth:
+      DefaultAuthorizer: CognitoAuth
+      Authorizers:
+        CognitoAuth:
+          JwtConfiguration:
+            issuer: !Sub "https://cognito-idp.us-east-1.amazonaws.com/${UserPool}"
+            audience: [!Ref UserPoolClient]
+          IdentitySource: "$request.header.Authorization"
+BookingFunction:
+  Type: AWS::Serverless::Function
+  Properties:
+    Events:
+      Api:
+        Type: HttpApi
+        Properties:
+          ApiId: !Ref CloudAirApi
+          Path: /bookings
+          Method: POST</code></pre>
+  <p class="small">API Gateway validates the JWT signature and expiry before invoking Lambda — no token validation code in your handler.</p>
+</section>
+
+<section>
+  <h2>Reading Claims in the Lambda Handler</h2>
+  <pre><code class="language-python">def handler(event, context):
+    # API Gateway HTTP API injects the validated JWT claims
+    claims = event["requestContext"]["authorizer"]["jwt"]["claims"]
+    user_id  = claims["sub"]            # Cognito user UUID
+    email    = claims["email"]
+    groups   = claims.get("cognito:groups", [])
+
+    if "admins" not in groups:
+        return {"statusCode": 403, "body": "Forbidden"}
+
+    # Scope data access to the authenticated user
+    bookings = get_bookings_for_user(user_id)
+    return {"statusCode": 200, "body": json.dumps(bookings)}</code></pre>
+  <p class="small">Never trust a user-supplied ID in the request body — always extract identity from the validated JWT claims injected by API Gateway.</p>
+</section>
+
+<section>
+  <h2>AWS X-Ray — Distributed Tracing</h2>
+  <ul>
+    <li>Instruments requests end-to-end: API Gateway → Lambda → DynamoDB → SNS → downstream Lambda</li>
+    <li><strong>Trace</strong> — one end-to-end request; composed of <strong>segments</strong> (per service) and <strong>subsegments</strong> (per operation within a service)</li>
+    <li><strong>Service Map</strong> — visual graph of all services and their error rates + latency — identify bottlenecks and failure paths at a glance</li>
+    <li>X-Ray SDK patches boto3 automatically — every AWS API call becomes a traced subsegment</li>
+    <li>Sampling rules control cost: default 5% + 1 req/s reservoir; tune per path/method</li>
+  </ul>
+  <p class="small">Enable active tracing on Lambda with a single SAM property: <code>Tracing: Active</code> — no code change required.</p>
+</section>
+
+<section>
+  <h2>Instrumenting Lambda with the X-Ray SDK</h2>
+  <pre><code class="language-python">from aws_xray_sdk.core import xray_recorder, patch_all
+
+patch_all()  # patches boto3, requests, httplib
+
+@xray_recorder.capture("process_booking")
+def process_booking(booking_id: str):
+    xray_recorder.current_subsegment().put_annotation("bookingId", booking_id)
+    xray_recorder.current_subsegment().put_metadata("payload", {"id": booking_id})
+
+    with xray_recorder.in_subsegment("fetch_inventory"):
+        inventory = ddb.get_item(TableName=INVENTORY_TABLE,
+                                  Key={"pk": {"S": booking_id}})
+    return inventory</code></pre>
+  <p class="small">Annotations are indexed and searchable in the X-Ray console; metadata is stored but not indexed. Use annotations for correlation IDs and environment.</p>
+</section>
+
+<section>
+  <h2>Lambda Powertools — Structured Logging + Tracing</h2>
+  <pre><code class="language-python">from aws_lambda_powertools import Logger, Tracer
+
+logger  = Logger(service="booking-service")
+tracer  = Tracer(service="booking-service")
+
+@tracer.capture_lambda_handler
+@logger.inject_lambda_context(correlation_id_path="requestContext.requestId")
+def handler(event, context):
+    logger.info("Booking request received",
+                extra={"bookingId": event["bookingId"],
+                       "userId":    event["userId"]})
+    result = process(event)
+    logger.info("Booking complete", extra={"result": result})
+    return result</code></pre>
+  <p class="small">Powertools emits JSON logs with <code>cold_start</code>, <code>correlation_id</code>, <code>service</code>, and <code>xray_trace_id</code> automatically — CloudWatch Logs Insights queries become trivial.</p>
+</section>
+
+<section>
+  <h2>CloudWatch Logs Insights — Querying Distributed Traces</h2>
+  <pre><code class="language-sql">/* Find slow booking requests across all Cloud Air Lambdas */
+fields @timestamp, service, correlation_id, bookingId, @duration
+| filter service like /cloudair/
+| filter @duration > 2000
+| sort @timestamp desc
+| limit 50</code></pre>
+  <ul>
+    <li>Use the shared <code>correlation_id</code> (injected by Powertools) to pivot from a Logs Insights result to the full X-Ray trace</li>
+    <li>CloudWatch ServiceLens stitches CloudWatch metrics, logs, and X-Ray traces into one view</li>
+  </ul>
+  <p class="small">Observability is not a feature to add at the end — instrument from the first Lambda and keep the correlation ID flowing through every downstream call.</p>
+</section>
+
+<section data-background-color="#FF9900">
+  <span class="lab-tag">Hands-On Lab Block · 2 × 45 min</span>
+  <h2>🧪 Labs 7a &amp; 7b — Secure &amp; Observe</h2>
+  <ul>
+    <li><strong>7a</strong> — Create a Cognito User Pool and App Client; configure an API Gateway HTTP API JWT authorizer; call the secured <code>/bookings</code> endpoint with and without a valid token</li>
+    <li><strong>7b</strong> — Enable X-Ray active tracing on all Cloud Air Lambdas; add Powertools structured logging; trigger the booking flow; inspect the Service Map and a full distributed trace; run a Logs Insights query correlated by <code>bookingId</code></li>
+  </ul>
+  <p class="small"><code>labs/lab7a-cognito-authorizer.md · lab7b-xray-tracing.md</code></p>
+</section>
+
+<section data-background-color="#146EB4">
+  <h2>Coming Up</h2>
+  <p>Module 15 — Course Wrap-up. Recap what Cloud Air became, the principles that got it there, and where to take your skills next.</p>
+</section>
+
+</div></div>
+<script src="https://cdn.jsdelivr.net/npm/reveal.js@5.1.0/dist/reveal.js"></script>
+<script>Reveal.initialize({ hash: true, slideNumber: 'c/t', transition: 'fade', width: 1280, height: 800, margin: 0.04, minScale: 0.2, maxScale: 2.0 });</script>
+</body>
+</html>
