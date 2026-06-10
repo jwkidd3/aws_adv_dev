@@ -74,13 +74,14 @@ cp -r aws_adv_dev/labs/files ./aws-adv-dev
 
 # Verify — raise your hand if any line shows MISS
 cd ~/environment/aws-adv-dev
-for f in lab1/smoke_test.py lab2/seed.py lab2/process.py \
-         lab2/make_get_url.py lab2/make_put_url.py lab2/waiter_demo.py \
-         lab3/seed.py lab3/bulk_load.py lab3/query_filter.py \
-         lab3/query_gsi.py lab3/update_conditional.py lab3/scan_demo.py \
-         lab4/handler.py lab4/lambda-perms.json \
-         lab6/swagger.json lab7/python/handler.py \
-         lab7/template.yaml bootstrap.sh; do
+for f in lab1/smoke_test.py \
+         lab2/base-stack.yaml lab2/monolith/application.py \
+         lab3/load_config.py lab3/get_secret.py lab3/params.json \
+         lab4/template.yaml lab4/src/app.py \
+         lab5/create_table.py lab5/items.json lab5/booking-saga.asl.json \
+         lab5/handlers.py lab5/template.yaml \
+         lab6/publish_booking.py lab6/worker.py lab6/put_event.py \
+         lab7/xray_handler.py bootstrap.sh; do
   [ -f "$f" ] && echo "OK   $f" || echo "MISS $f"
 done
 chmod +x ~/environment/aws-adv-dev/bootstrap.sh

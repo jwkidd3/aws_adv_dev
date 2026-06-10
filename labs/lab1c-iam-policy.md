@@ -1,6 +1,6 @@
 # 🧪 Lab 1c — Test Permissions & Author IAM Policy
 
-*Hands-On Lab · 45 min · Module 4 — Permissions*
+*Hands-On Lab · 45 min · Console + CLI · Day 1 — Environment Setup*
 
 ## Objectives (3 min)
 

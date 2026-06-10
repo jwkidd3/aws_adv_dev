@@ -1,6 +1,6 @@
 # 🧪 Lab 1b — First SDK Call in Cloud9
 
-*Hands-On Lab · 30 min · SDK · Module 3 — SDKs & CLI*
+*Hands-On Lab · 30 min · SDK · Day 1 — Environment Setup*
 
 ## Objectives (2 min)
 
