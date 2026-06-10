@@ -103,6 +103,15 @@ def _fetch_flights_from_ddb(origin: str | None, destination: str | None) -> list
     Scan the DynamoDB table for items with pk prefix 'FLIGHT#'.
     Returns an empty list if the table contains no flight items, which
     triggers the static sample fallback in the caller.
+
+    NOTE (Lab 4): The Bookings-$USER_ID table created by the Lab 2a base stack uses
+    `bookingId` as its hash key and stores booking records — it does not contain
+    FLIGHT# items.  This DynamoDB branch is illustrative, showing how you would
+    query a single-table design that uses a PK/SK pattern with a FLIGHT# prefix.
+    In practice the scan will return zero items and the static SAMPLE_FLIGHTS
+    catalogue below is returned instead.  Later labs (Lab 5) introduce the
+    CloudAir single-table (CloudAir-$USER_ID) with PK/SK keys if you want to
+    extend this to real flight data.
     """
     filter_expr = Attr("pk").begins_with("FLIGHT#")
 

@@ -90,6 +90,9 @@
     },
     "ConfirmBooking": { "Type": "Task",
       "Resource": "arn:aws:lambda:us-east-1:ACCT:function:cloudair-$USER_ID-confirm",
+      "End": true },
+    "ReleaseSeat": { "Type": "Task",
+      "Resource": "arn:aws:lambda:us-east-1:ACCT:function:cloudair-$USER_ID-release",
       "End": true }
   }
 }</code></pre>
@@ -165,6 +168,7 @@ aws stepfunctions get-execution-history \
       - LambdaInvokePolicy:
           FunctionName: !Ref ProcessPaymentFunction
     Logging:
+      # SFNLogGroup is an AWS::Logs::LogGroup resource declared elsewhere in the template
       Destinations: [{ CloudWatchLogsLogGroup: { LogGroupArn: !GetAtt SFNLogGroup.Arn } }]
       Level: ALL</code></pre>
   <p class="small">SAM substitutions inject Lambda ARNs into the ASL at deploy time — keep ASL portable across environments.</p>

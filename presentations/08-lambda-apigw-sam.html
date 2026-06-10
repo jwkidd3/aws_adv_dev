@@ -40,6 +40,7 @@
 <section>
   <h2>Lambda Deep Dive — Handler Contract</h2>
   <pre><code>import json, boto3, os
+from boto3.dynamodb.conditions import Key
 
 dynamodb = boto3.resource("dynamodb")  # initialised once, reused across warm invocations
 table = dynamodb.Table(os.environ["FLIGHTS_TABLE"])
@@ -48,8 +49,7 @@ def handler(event, context):
     origin = event["pathParameters"]["origin"]
     dest   = event["pathParameters"]["dest"]
     items  = table.query(
-        KeyConditionExpression="origin = :o AND dest = :d",
-        ExpressionAttributeValues={":o": origin, ":d": dest}
+        KeyConditionExpression=Key("origin").eq(origin) & Key("dest").eq(dest)
     )["Items"]
     return {"statusCode": 200,
             "body": json.dumps(items),
@@ -191,13 +191,14 @@ def test_search_returns_flights():
 </section>
 
 <section data-background-color="#FF9900">
-  <span class="lab-tag">Hands-On Lab Block · 2 × 35 min</span>
-  <h2>🧪 Labs 4a · 4b</h2>
+  <span class="lab-tag">Hands-On Lab · 35 min</span>
+  <h2>🧪 Lab 4a — SAM Microservice</h2>
   <ul>
-    <li><strong>4a — SAM Microservice.</strong> Author a SAM template for the Cloud Air Flight Search service; <code>sam build &amp;&amp; sam deploy</code> to a personal stack; invoke via API Gateway URL; run unit tests with <code>moto</code>.</li>
-    <li><strong>4b — Strangler Routing.</strong> Add an HTTP_PROXY route to the same API Gateway that forwards all non-search traffic to the legacy Beanstalk monolith; verify search is served by Lambda while booking still hits the monolith.</li>
+    <li>Author a SAM template for the Cloud Air Flight Search service</li>
+    <li><code>sam build &amp;&amp; sam deploy</code> to a personal stack; invoke via API Gateway URL</li>
+    <li>Run unit tests with <code>moto</code></li>
   </ul>
-  <p class="small"><code>labs/lab4a-sam-microservice.md · lab4b-strangler-routing.md</code></p>
+  <p class="small"><code>labs/lab4a-sam-microservice.md</code></p>
 </section>
 
 <section data-background-color="#146EB4">

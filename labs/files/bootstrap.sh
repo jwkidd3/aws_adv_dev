@@ -84,7 +84,7 @@ ensure_base(){
   fi
   local bucket table
   bucket=$(aws cloudformation describe-stacks --stack-name "$STACK" \
-    --query "Stacks[0].Outputs[?OutputKey=='AssetsBucketName'].OutputValue" --output text 2>/dev/null || true)
+    --query "Stacks[0].Outputs[?OutputKey=='StaticAssetsBucketName'].OutputValue" --output text 2>/dev/null || true)
   [ -z "$bucket" ] && bucket="cloudair-$USER_ID-assets"
   set_var ASSETS_BUCKET  "$bucket"
   set_var BOOKINGS_TABLE "Bookings-$USER_ID"

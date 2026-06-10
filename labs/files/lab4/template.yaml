@@ -108,22 +108,11 @@ Resources:
       RouteKey: "ANY /{proxy+}"
       Target: !Sub "integrations/${MonolithIntegration}"
 
-  # The catch-all route also needs a deployment+stage refresh.
-  # SAM handles the FlightsFn routes automatically; we add an explicit stage
-  # dependency so the manual route is active in the same deployment.
-  AutoDeployment:
-    Type: AWS::ApiGatewayV2::Deployment
-    DependsOn:
-      - MonolithCatchAllRoute
-    Properties:
-      ApiId: !Ref FlightsApi
-
-  ProdStageUpdate:
-    Type: AWS::ApiGatewayV2::Stage
-    Properties:
-      ApiId: !Ref FlightsApi
-      StageName: prod
-      AutoDeploy: true
+  # NOTE: No explicit AWS::ApiGatewayV2::Stage or AWS::ApiGatewayV2::Deployment
+  # resource is needed here. AWS::Serverless::HttpApi with StageName: prod already
+  # creates the prod stage with AutoDeploy enabled. Adding a second resource with
+  # StageName: prod would conflict (ConflictException). The MonolithCatchAllRoute
+  # above is picked up automatically by the HttpApi's own auto-deployment.
 
 # ── Outputs ───────────────────────────────────────────────────────────────────
 Outputs:

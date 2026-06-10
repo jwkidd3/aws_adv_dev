@@ -196,8 +196,13 @@ done < <(aws ssm get-parameters-by-path \
     --output text \
     --region $AWS_REGION)
 
+# The SSM parameter is stored as 'flights_table', which the loop exports as
+# FLIGHTS_TABLE.  The monolith reads BOOKINGS_TABLE, so alias it here:
+export BOOKINGS_TABLE=$FLIGHTS_TABLE
+
 # Verify the table name came through
 echo "FLIGHTS_TABLE=$FLIGHTS_TABLE"
+echo "BOOKINGS_TABLE=$BOOKINGS_TABLE"
 echo "ASSETS_BUCKET=$ASSETS_BUCKET"
 ```
 

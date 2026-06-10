@@ -154,7 +154,7 @@ aws codepipeline get-pipeline-state \
     <div><strong>Deploy-staging stage</strong><br><span class="small">CloudFormation change set execute; Beanstalk rolling deploy; smoke test Lambda invocation</span></div>
     <div><strong>Deploy-prod stage</strong><br><span class="small">Blue/green on Beanstalk for monolith; CodeDeploy linear-10-percent canary for Lambda functions</span></div>
   </div>
-  <p class="small">The pipeline is defined in <code>labs/files/lab3/pipeline.yaml</code> and deployed as a CloudFormation stack — the pipeline manages itself after the first <code>aws cloudformation deploy</code>.</p>
+  <p class="small">In practice, the pipeline itself is a CloudFormation stack (a <code>pipeline.yaml</code> template is illustrative of this pattern) — the pipeline manages itself after the first <code>aws cloudformation deploy</code>.</p>
 </section>
 
 <section>
@@ -166,16 +166,6 @@ aws codepipeline get-pipeline-state \
     <li><strong>Canary / Linear (Lambda):</strong> traffic shifts by percentage over time; CloudWatch alarms auto-rollback on elevated error rate. Best for serverless where "instance" cost is irrelevant.</li>
   </ul>
   <p class="small">Cloud Air commitment: the booking service never has &gt;30 s of downtime during a deploy. Blue/Green on the ALB is the only strategy that guarantees this.</p>
-</section>
-
-<section data-background-color="#FF9900">
-  <span class="lab-tag">Hands-On Lab Block · 2 × ~40 min</span>
-  <h2>🧪 Labs 3a · 3b</h2>
-  <ul>
-    <li><strong>3a — SSM Parameter Store Config.</strong> Migrate Cloud Air's hardcoded configuration values to SSM Parameter Store (Standard tier). Update the Flask app to read from SSM at startup; redeploy via Beanstalk. Verify with <code>aws ssm get-parameters-by-path</code>.</li>
-    <li><strong>3b — Secrets Manager + Rotation.</strong> Move the DB credential to Secrets Manager; enable automatic rotation with a Lambda rotator. Update the application to call <code>get_secret_value</code>; verify the rotation lifecycle in the console and via CloudTrail.</li>
-  </ul>
-  <p class="small"><code>labs/lab3a-parameter-store.md · lab3b-secrets-manager.md</code></p>
 </section>
 
 <section data-background-color="#146EB4">

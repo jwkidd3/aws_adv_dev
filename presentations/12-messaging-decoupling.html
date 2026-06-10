@@ -78,7 +78,7 @@ sqs.send_message(
 
 # Consumer — receive and delete
 msgs = sqs.receive_message(QueueUrl=Q_URL, MaxNumberOfMessages=5,
-                            WaitTimeSeconds=20)["Messages"]
+                            WaitTimeSeconds=20).get("Messages", [])
 for m in msgs:
     process(json.loads(m["Body"]))
     sqs.delete_message(QueueUrl=Q_URL, ReceiptHandle=m["ReceiptHandle"])</code></pre>

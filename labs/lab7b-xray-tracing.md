@@ -79,7 +79,10 @@ imports it at module scope so it runs once per container, not once per invocatio
 ## Step 3 — Enable Active Tracing in the SAM Template (8 min)
 
 Active tracing tells the Lambda service to emit trace segments to X-Ray for every
-invocation. HTTP API tracing sends an additional segment for the API Gateway layer.
+invocation. With HTTP API (API Gateway v2), X-Ray tracing is instrumented at the
+Lambda level — the API Gateway layer itself does not emit a trace segment for HTTP
+APIs (only REST APIs / API Gateway v1 support that). The trace therefore starts at
+the Lambda function and flows to downstream services such as DynamoDB.
 
 Open `~/environment/aws-adv-dev/lab4/template.yaml` in the editor and confirm (or add)
 the following in `Globals`:
@@ -98,25 +101,11 @@ Globals:
         LOG_LEVEL: INFO
 ```
 
-Also add `TracingConfig` to the `FlightsApi` resource:
-
-```yaml
-  FlightsApi:
-    Type: AWS::Serverless::HttpApi
-    Properties:
-      StageName: prod
-      TracingConfig:
-        TracingEnabled: true   # <-- add this block
-      Auth:
-        DefaultAuthorizer: CognitoJwtAuth
-        Authorizers:
-          CognitoJwtAuth:
-            IdentitySource: $request.header.Authorization
-            JwtConfiguration:
-              issuer: !Sub "https://cognito-idp.${AWS::Region}.amazonaws.com/${PoolId}"
-              audience:
-                - !Ref AppClientId
-```
+> **Note:** `AWS::Serverless::HttpApi` (API Gateway v2 HTTP API) does **not** support
+> a `TracingConfig` property — that property is only available on `AWS::Serverless::Api`
+> (REST APIs). Do not add `TracingConfig` to `FlightsApi`. The `Tracing: Active` setting
+> under `Globals.Function` is sufficient; it causes every Lambda invocation to emit a
+> trace segment to X-Ray.
 
 Grant the Lambda execution role permission to write to X-Ray:
 
@@ -197,7 +186,9 @@ done
 
 1. Open the **CloudWatch** console → left nav → **X-Ray traces** → **Service map**
 2. Wait 30–60 seconds after the requests for data to appear
-3. Verify the graph shows: **Client → API Gateway → Lambda → DynamoDB**
+3. Verify the graph shows: **Lambda → DynamoDB** (the trace originates at the Lambda
+   function — HTTP API / API Gateway v2 does not emit its own trace segment, so there
+   is no separate "API Gateway" node in the service map)
 4. Click the **Lambda** node → observe the response-time histogram (p50/p99)
 5. Click **View traces** → select any trace
 6. In the trace timeline, expand the Lambda segment → find the `get_flights` subsegment
@@ -320,18 +311,16 @@ aws dynamodb delete-table \
     --region $AWS_REGION
 ```
 
-### Delete the Step Functions state machine (Lab 5b)
+### Delete the booking saga SAM stack (Lab 5b)
 
 ```bash
 source ~/.aws-adv-dev.env
 
-# Find and delete the state machine if it exists
-SM_ARN=$(aws stepfunctions list-state-machines \
-    --query "stateMachines[?name=='cloudair-$USER_ID-booking-flow'].stateMachineArn" \
-    --output text --region $AWS_REGION)
-
-[ -n "$SM_ARN" ] && aws stepfunctions delete-state-machine \
-    --state-machine-arn $SM_ARN --region $AWS_REGION
+# Delete the saga SAM stack — removes the state machine, all 4 Lambda stubs, and the IAM role
+sam delete \
+    --stack-name "cloudair-$USER_ID-saga" \
+    --no-prompts \
+    --region $AWS_REGION
 ```
 
 ### Delete the CloudFormation base stack (Lab 2a) and Elastic Beanstalk environment (Lab 2b)
@@ -419,9 +408,9 @@ surfaces Contributor Insights anomaly detection on the same view.
 ## Success Criteria (3 min)
 
 - ✅ `aws-xray-sdk` installed into `lab4/src/` and `app.py` uses `patch_all()` + annotations
-- ✅ SAM template has `Tracing: Active` under `Globals.Function` and `TracingEnabled: true` on the API
+- ✅ SAM template has `Tracing: Active` under `Globals.Function` (no API-level TracingConfig needed for HTTP API)
 - ✅ `AWSXRayDaemonWriteAccess` attached to the Flights Lambda execution role
 - ✅ 25 authenticated requests generated and visible in X-Ray traces
-- ✅ Service map shows Client → API Gateway → Lambda → DynamoDB topology
+- ✅ Service map shows Lambda → DynamoDB topology (trace originates at Lambda for HTTP API)
 - ✅ At least one annotation filter query returned matching traces
-- ✅ All course resources deleted — SAM stacks, Cognito pool, EventBridge bus, SQS/SNS, Lambda worker, DynamoDB tables, EB environment, and base CloudFormation stack
+- ✅ All course resources deleted — SAM stacks (flights + saga), Cognito pool, EventBridge bus, SQS/SNS, Lambda worker, DynamoDB tables, EB environment, and base CloudFormation stack

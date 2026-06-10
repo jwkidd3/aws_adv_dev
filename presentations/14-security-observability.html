@@ -64,7 +64,7 @@
   <h2>JWT Authorizer on API Gateway</h2>
   <pre><code class="language-yaml"># SAM template excerpt
 CloudAirApi:
-  Type: AWS::Serverless::Api
+  Type: AWS::Serverless::HttpApi
   Properties:
     StageName: prod
     Auth:

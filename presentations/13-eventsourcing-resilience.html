@@ -46,8 +46,9 @@
     <li>Cloud Air bookings: <code>SeatHeld → PaymentProcessed → BookingConfirmed → BoardingPassIssued</code> — each event is immutable, append-only</li>
   </ul>
   <pre><code class="language-python"># Append an event to DynamoDB event store
+import os
 ddb = boto3.resource("dynamodb")
-table = ddb.Table(f"cloudair-{USER_ID}-events")
+table = ddb.Table(f"cloudair-{os.environ['USER_ID']}-events")
 table.put_item(Item={
     "pk": f"BOOKING#{booking_id}",
     "sk": f"EVENT#{timestamp}#{event_type}",
@@ -98,7 +99,7 @@ def handler(event, context):
     idempotent, DynamoDBPersistenceLayer)
 
 persistence = DynamoDBPersistenceLayer(
-    table_name=f"cloudair-{USER_ID}-idempotency")
+    table_name=f"cloudair-{os.environ['USER_ID']}-idempotency")
 
 @idempotent(persistence_store=persistence)
 def handler(event, context):

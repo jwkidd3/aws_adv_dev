@@ -25,7 +25,7 @@ echo "USER_ID=$USER_ID  TABLE=$BOOKINGS_TABLE"
 eb --version   # expect EB CLI 3.x
 ```
 
-> **Starting fresh?** `bash ~/environment/aws-adv-dev/bootstrap.sh 2b` sources your env file, verifies the base stack exists, and confirms the `eb` CLI is on your PATH.
+> **Starting fresh?** `bash ~/environment/aws-adv-dev/bootstrap.sh 2b` sources your env file and sets the `BOOKINGS_TABLE` variable. It does **not** deploy the base stack or verify the `eb` CLI — Lab 2a must be completed first (`bash bootstrap.sh 2a` or the manual Lab 2a steps) before running this lab.
 
 ---
 

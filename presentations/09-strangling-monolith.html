@@ -61,12 +61,12 @@
   </ul>
   <pre><code># SAM — proxy catch-all to legacy monolith
 LegacyProxy:
-  Type: HttpApi
+  Type: AWS::Serverless::HttpApi
   Properties:
     RouteKey: "ANY /{proxy+}"
     Integration:
       Type: HTTP_PROXY
-      Uri: !Sub "http://${MonolithUrl}/{proxy}"
+      Uri: !Sub "http://${MonolithUrl}/{proxy+}"
       Method: ANY</code></pre>
 </section>
 
@@ -106,7 +106,7 @@ LegacyProxy:
   <pre><code>aws lambda update-alias \
   --function-name cloudair-$USER_ID-search \
   --name prod \
-  --routing-config AdditionalVersionWeights={"2"=0.10}</code></pre>
+  --routing-config '{"AdditionalVersionWeights":{"2":0.10}}'</code></pre>
 </section>
 
 <section>

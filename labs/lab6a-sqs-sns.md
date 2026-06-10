@@ -115,6 +115,7 @@ SUBSCRIPTION_ARN=$(aws sns subscribe \
     --region $AWS_REGION)
 
 echo "Subscription: $SUBSCRIPTION_ARN"
+echo "export SUBSCRIPTION_ARN=$SUBSCRIPTION_ARN" >> ~/.aws-adv-dev.env
 ```
 
 SNS must be permitted to write to the SQS queue. Apply the resource-based policy:
