@@ -51,8 +51,11 @@ cat > "$TMP/labrole-trust.json" <<'JSON'
     "Action":"sts:AssumeRole"}] }
 JSON
 # The labs create/destroy IAM roles & policies (Lambda exec role, StudentLambdaRole,
-# instance profiles) and pass roles to Lambda/API Gateway. PowerUserAccess covers
-# everything else; this inline policy adds just the IAM writes the labs need.
+# instance profiles) and pass roles to Lambda / API Gateway / Elastic Beanstalk.
+# PowerUserAccess covers everything else; this inline policy adds just the IAM
+# writes the labs need. Elastic Beanstalk (Lab 2b) is the reason elasticbeanstalk
+# + ec2 appear in PassRole and CreateServiceLinkedRole is granted — `eb create`
+# must pass aws-elasticbeanstalk-service-role and the ec2 instance profile.
 cat > "$TMP/labrole-iam.json" <<'JSON'
 { "Version":"2012-10-17",
   "Statement":[
@@ -70,7 +73,11 @@ cat > "$TMP/labrole-iam.json" <<'JSON'
     {"Sid":"PassRoleToLabServices","Effect":"Allow",
      "Action":"iam:PassRole","Resource":"*",
      "Condition":{"StringEquals":{"iam:PassedToService":[
-       "lambda.amazonaws.com","apigateway.amazonaws.com"]}}}
+       "lambda.amazonaws.com","apigateway.amazonaws.com",
+       "elasticbeanstalk.amazonaws.com","ec2.amazonaws.com"]}}},
+    {"Sid":"ElasticBeanstalkServiceLinkedRole","Effect":"Allow",
+     "Action":"iam:CreateServiceLinkedRole","Resource":"*",
+     "Condition":{"StringEquals":{"iam:AWSServiceName":"elasticbeanstalk.amazonaws.com"}}}
   ] }
 JSON
 
@@ -130,8 +137,66 @@ for U in $(aws iam list-users \
   run aws iam add-user-to-group --group-name "$GROUP" --user-name "$U"
 done
 
+# --- 4. Elastic Beanstalk roles (Lab 2b) -------------------------------------
+# `eb create` needs two pre-existing roles. We create them ONCE here so 25
+# students don't race to create the same global-named roles (and so LabRole's
+# scoped PassRole works without LabRole also having to create them):
+#   aws-elasticbeanstalk-service-role  — EB service role (env orchestration/health)
+#   aws-elasticbeanstalk-ec2-role      — EC2 instance profile for the app instances
+# The per-student DynamoDB grant the Bookings routes need is added by the
+# monolith's .ebextensions at deploy time (scoped to Bookings-<userN>), so it is
+# NOT attached here.
+echo; echo "4) Elastic Beanstalk roles (Lab 2b)"
+cat > "$TMP/eb-service-trust.json" <<'JSON'
+{ "Version":"2012-10-17",
+  "Statement":[{"Effect":"Allow",
+    "Principal":{"Service":"elasticbeanstalk.amazonaws.com"},
+    "Action":"sts:AssumeRole"}] }
+JSON
+
+EB_SVC="aws-elasticbeanstalk-service-role"
+EB_EC2="aws-elasticbeanstalk-ec2-role"
+
+if aws iam get-role --role-name "$EB_SVC" >/dev/null 2>&1; then
+  echo "   role $EB_SVC exists"
+else
+  run aws iam create-role --role-name "$EB_SVC" \
+      --description "Elastic Beanstalk service role (Lab 2b)" \
+      --assume-role-policy-document "file://$TMP/eb-service-trust.json"
+fi
+run aws iam attach-role-policy --role-name "$EB_SVC" \
+    --policy-arn arn:aws:iam::aws:policy/AWSElasticBeanstalkEnhancedHealth
+run aws iam attach-role-policy --role-name "$EB_SVC" \
+    --policy-arn arn:aws:iam::aws:policy/AWSElasticBeanstalkManagedUpdatesCustomerRolePolicy
+
+if aws iam get-role --role-name "$EB_EC2" >/dev/null 2>&1; then
+  echo "   role $EB_EC2 exists"
+else
+  run aws iam create-role --role-name "$EB_EC2" \
+      --description "Elastic Beanstalk EC2 instance profile role (Lab 2b)" \
+      --assume-role-policy-document "file://$TMP/labrole-trust.json"   # ec2 trust
+fi
+for P in AWSElasticBeanstalkWebTier AWSElasticBeanstalkWorkerTier \
+         AWSElasticBeanstalkMulticontainerDocker; do
+  run aws iam attach-role-policy --role-name "$EB_EC2" \
+      --policy-arn "arn:aws:iam::aws:policy/$P"
+done
+if aws iam get-instance-profile --instance-profile-name "$EB_EC2" >/dev/null 2>&1; then
+  echo "   instance profile $EB_EC2 exists"
+else
+  run aws iam create-instance-profile --instance-profile-name "$EB_EC2"
+fi
+if ! aws iam get-instance-profile --instance-profile-name "$EB_EC2" \
+      --query 'InstanceProfile.Roles[0].RoleName' --output text 2>/dev/null | grep -qx "$EB_EC2"; then
+  run aws iam add-role-to-instance-profile \
+      --instance-profile-name "$EB_EC2" --role-name "$EB_EC2"
+else
+  echo "   role already in instance profile"
+fi
+
 echo
 [ "$APPLY" = 0 ] && echo "(dry run — re-run with --apply to make changes)" || cat <<EOF
 Done. Students in Lab 1a attach the '$LAB_ROLE' instance profile to their Cloud9
 EC2 (Modify IAM role) and turn AMTC off. Everything is region-locked to us-east-1.
+Lab 2b: the Elastic Beanstalk roles are pre-provisioned and LabRole can pass them.
 EOF

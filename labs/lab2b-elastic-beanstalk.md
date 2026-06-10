@@ -39,6 +39,15 @@ eb --version   # expect EB CLI 3.x
 > `externally-managed-environment`, the `--break-system-packages` fallback above
 > handles it (fine in a throwaway training environment).
 
+> **Instructor setup (already done before class).** `admin/setup-account.sh`
+> pre-provisions the two Elastic Beanstalk roles (`aws-elasticbeanstalk-service-role`
+> and the `aws-elasticbeanstalk-ec2-role` instance profile) and grants `LabRole`
+> permission to **pass** them — without this, `eb create` fails with
+> *"Unable to assign role … permission to pass this role: aws-elasticbeanstalk-service-role."*
+> The app's DynamoDB access (for the `/bookings` routes) is granted automatically
+> by the monolith's `.ebextensions/01-dynamodb-access.config` at deploy time —
+> scoped to your `Bookings-$USER_ID` table, no editing required.
+
 > **Starting fresh?** `bash ~/environment/aws-adv-dev/bootstrap.sh 2b` sources your env file and sets the `BOOKINGS_TABLE` variable. It does **not** deploy the base stack or verify the `eb` CLI — Lab 2a must be completed first (`bash bootstrap.sh 2a` or the manual Lab 2a steps) before running this lab.
 
 ---
