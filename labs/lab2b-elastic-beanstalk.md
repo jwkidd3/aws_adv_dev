@@ -74,10 +74,12 @@ source ~/.aws-adv-dev.env
 
 cd ~/environment/aws-adv-dev/lab2/monolith
 
-eb init cloudair-$USER_ID \
-    --platform "Python 3.11 running on 64bit Amazon Linux 2023" \
-    --region $AWS_REGION \
-    --no-interactive
+# eb init has no --no-interactive flag. Passing the app name, -p (platform),
+# and --region makes it non-interactive except for an SSH prompt; pipe "n"
+# (we use --single in Step 3, so no EC2 keypair is needed).
+printf 'n\n' | eb init cloudair-$USER_ID \
+    -p "Python 3.11 running on 64bit Amazon Linux 2023" \
+    --region $AWS_REGION
 ```
 
 This creates a `.elasticbeanstalk/config.yml` file that records the application name and default region. It does **not** create any AWS resources yet.
