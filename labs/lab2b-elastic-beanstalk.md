@@ -17,13 +17,27 @@
 
 - Lab 2a complete — stack `cloudair-$USER_ID-base` is `CREATE_COMPLETE`
 - `$USER_ID`, `$BOOKINGS_TABLE`, `$AWS_REGION` exported in `~/.aws-adv-dev.env`
-- Elastic Beanstalk CLI (`eb`) installed — verify with `eb --version`
+- Elastic Beanstalk CLI (`eb`) — **not preinstalled on the Cloud9 image**; install it once (command below)
 
 ```bash
 source ~/.aws-adv-dev.env
 echo "USER_ID=$USER_ID  TABLE=$BOOKINGS_TABLE"
+
+# The EB CLI is not on the Cloud9 AL2023 image. Install it once — idempotent,
+# safe to re-run, and the PATH line survives new terminals / Cloud9 restarts.
+eb --version 2>/dev/null || {
+  python3 -m pip install --user awsebcli 2>/dev/null \
+    || python3 -m pip install --user --break-system-packages awsebcli
+  grep -q '.local/bin' ~/.bashrc || echo 'export PATH=$HOME/.local/bin:$PATH' >> ~/.bashrc
+  export PATH=$HOME/.local/bin:$PATH
+}
 eb --version   # expect EB CLI 3.x
 ```
+
+> Same command for every student — the EB CLI install is machine-level, not
+> scoped to your `userN`. If `python3 -m pip` reports
+> `externally-managed-environment`, the `--break-system-packages` fallback above
+> handles it (fine in a throwaway training environment).
 
 > **Starting fresh?** `bash ~/environment/aws-adv-dev/bootstrap.sh 2b` sources your env file and sets the `BOOKINGS_TABLE` variable. It does **not** deploy the base stack or verify the `eb` CLI — Lab 2a must be completed first (`bash bootstrap.sh 2a` or the manual Lab 2a steps) before running this lab.
 
