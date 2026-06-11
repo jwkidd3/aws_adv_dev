@@ -48,7 +48,7 @@
 
 > With AMTC off, the SDK/CLI fall through to IMDS and pick up `LabRole`'s credentials — no `aws configure`, no keys on disk. If the Cloud9 instance is stopped and restarted, AMTC stays off; if you delete and recreate the Cloud9, redo both steps.
 
-## Step 5 — Smoke Test & Install boto3 (3 min)
+## Step 5 — Smoke Test & Install Tooling (4 min)
 
 > In the Cloud9 terminal (bottom pane):
 
@@ -58,12 +58,20 @@ aws sts get-caller-identity
 # Arn: arn:aws:sts::...:assumed-role/LabRole/i-0abc…
 # ← confirms you're now running as LabRole, not AMTC
 
-# boto3 isn't on the default AL2023 image — install once
+# Cloud9 (Amazon Linux 2023) ships Python 3.9, but the SAM labs (4, 5, 7) build
+# python3.12 Lambda functions — `sam build` needs a matching python3.12 on PATH.
+# Install it once now so every later lab's build works natively:
+sudo dnf install -y python3.12
+python3.12 --version          # → Python 3.12.x
+
+# boto3 isn't on the default image — install once
 pip3 install --user boto3
 python3 -c "import boto3; print(boto3.__version__)"
 ```
 
 > If the ARN still shows `user/user1` or an AMTC session, redo Step 4 — Cloud9 sometimes needs a second toggle. `--user` installs boto3 into `~/.local`, which is on Python's default import path.
+>
+> **Why Python 3.12?** The Flights microservice (Lab 4), saga stubs (Lab 5b), and X-Ray handler (Lab 7) all run on the `python3.12` Lambda runtime, and their handlers use 3.10+ syntax. Installing `python3.12` here lets `sam build` produce a runtime-matched package without `--use-container`. If you skip this, `sam build` fails with *"Binary validation failed for python … runtime: python3.12."*
 
 ## Step 6 — Clone the Course Repo & Verify (3 min)
 

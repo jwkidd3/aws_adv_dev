@@ -74,7 +74,7 @@ source ~/.aws-adv-dev.env
 
 cd ~/environment/aws-adv-dev/lab4
 
-sam build --use-container
+sam build
 ```
 
 `sam build` reads `template.yaml`, finds the `CodeUri: src/` directive for `FlightsFn`, installs `requirements.txt` into a clean build directory (`.aws-sam/build/FlightsFn/`), and copies the handler. The result is a zip-ready artefact that matches the Lambda execution environment exactly.
@@ -86,13 +86,11 @@ ls .aws-sam/build/FlightsFn/
 
 You should see `app.py` and a `boto3/` package directory. Every dependency is vendored — Lambda does not have network access at runtime.
 
-> **Why `--use-container`?** `sam build` defaults to a **native** build, which needs a
-> `python3.12` interpreter on your `PATH` to match the function's runtime. The Cloud9
-> Amazon Linux 2023 image ships only **Python 3.9**, so a plain `sam build` fails with
-> *"Binary validation failed for python … did not satisfy constraints for runtime:
-> python3.12"*. `--use-container` builds inside the official AWS SAM `python3.12` Docker
-> image (Cloud9 has Docker pre-installed), so no local 3.12 is required. First run pulls
-> the image (~1 min). If Docker isn't running: `sudo systemctl start docker`, then retry.
+> `sam build` does a **native** build against the `python3.12` interpreter installed in
+> **Lab 1a Step 5** (Cloud9's default is Python 3.9, which would fail the runtime check).
+> If you see *"Binary validation failed for python … runtime: python3.12"*, you skipped
+> that step — run `sudo dnf install -y python3.12` and rebuild. (Alternatively,
+> `sam build --use-container` builds inside a Docker image without a local 3.12.)
 
 ---
 

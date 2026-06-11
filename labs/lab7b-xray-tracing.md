@@ -130,8 +130,7 @@ aws iam attach-role-policy \
 ```bash
 source ~/.aws-adv-dev.env
 cd ~/environment/aws-adv-dev/lab4
-# --use-container builds in the python3.12 Docker image (Cloud9 ships only 3.9)
-sam build --use-container
+sam build
 
 sam deploy \
     --stack-name "cloudair-$USER_ID-flights" \
