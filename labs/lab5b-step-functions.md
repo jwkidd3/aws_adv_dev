@@ -130,7 +130,9 @@ The `cancel_reservation` handler is intentionally idempotent — calling it twic
 source ~/.aws-adv-dev.env
 cd ~/environment/aws-adv-dev/lab5
 
-sam build
+# --use-container builds in the python3.12 Docker image; Cloud9 ships only
+# Python 3.9, so a native `sam build` fails the runtime check.
+sam build --use-container
 
 sam deploy \
   --stack-name cloudair-$USER_ID-saga \
