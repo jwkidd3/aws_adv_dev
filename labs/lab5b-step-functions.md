@@ -1,6 +1,6 @@
 # 🧪 Lab 5b — Orchestrating the Booking Saga with Step Functions
 
-*Hands-On Lab · 50 min · Console + CLI · Day 2 — Distributed Orchestration*
+*Hands-On Lab · 50 min · Console + CLI · Day 3 — Distributed Orchestration*
 
 ---
 
@@ -80,13 +80,13 @@ Key ASL patterns to note:
 ```json
 "Catch": [
   {
-    "ErrorEquals": ["PaymentDeclinedError", "States.ALL"],
+    "ErrorEquals": ["States.ALL"],
     "ResultPath": "$.error",
     "Next": "CancelReservation"
   }
 ]
 ```
-`ErrorEquals` lists specific error names first (`PaymentDeclinedError`), then `States.ALL` as a catch-all. Specific matchers take precedence; `States.ALL` is the fallback.
+`ErrorEquals` matches the error names a `Catch` (or `Retry`) applies to. **`States.ALL` is a wildcard that must appear alone** — Step Functions rejects a definition that combines it with a specific name (e.g. `["PaymentDeclinedError", "States.ALL"]` fails schema validation). To route a specific error differently from the rest, use **separate `Catch` entries**: list the specific-name entry first (it takes precedence), then a final `["States.ALL"]` entry as the fallback. Here a single `["States.ALL"]` block sends *any* `ChargePayment` failure to the compensating `CancelReservation`.
 
 ```json
 "Retry": [

@@ -108,7 +108,7 @@ Resources:
                   },
                   "ResultPath": "$.reservationResult",
                   "Retry": [{"ErrorEquals": ["Lambda.ServiceException","Lambda.AWSLambdaException"], "IntervalSeconds": 2, "MaxAttempts": 2, "BackoffRate": 2}],
-                  "Catch": [{"ErrorEquals": ["SeatUnavailableError","States.ALL"], "ResultPath": "$.error", "Next": "BookingFailed"}],
+                  "Catch": [{"ErrorEquals": ["States.ALL"], "ResultPath": "$.error", "Next": "BookingFailed"}],
                   "Next": "ChargePayment"
                 },
                 "ChargePayment": {
@@ -120,7 +120,7 @@ Resources:
                   },
                   "ResultPath": "$.paymentResult",
                   "Retry": [{"ErrorEquals": ["Lambda.ServiceException","Lambda.AWSLambdaException"], "IntervalSeconds": 2, "MaxAttempts": 2, "BackoffRate": 2}],
-                  "Catch": [{"ErrorEquals": ["PaymentDeclinedError","States.ALL"], "ResultPath": "$.error", "Next": "CancelReservation"}],
+                  "Catch": [{"ErrorEquals": ["States.ALL"], "ResultPath": "$.error", "Next": "CancelReservation"}],
                   "Next": "ConfirmBooking"
                 },
                 "ConfirmBooking": {
