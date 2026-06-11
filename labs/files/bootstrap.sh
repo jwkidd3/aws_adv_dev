@@ -50,8 +50,14 @@ U="$USER_ID"
 
 # --- helpers -----------------------------------------------------------------
 touch "$ENV_FILE"
+# Upsert NAME=VALUE into the env file. Avoids `sed -i` (whose syntax differs
+# between GNU sed on Cloud9 and BSD sed on macOS) — drop any existing line for
+# NAME, then append the new value. Portable + idempotent (no duplicate lines).
 set_var(){ local n="$1" v="$2"
-  grep -q "^export $n=" "$ENV_FILE" && sed -i "s|^export $n=.*|export $n=$v|" "$ENV_FILE" || echo "export $n=$v" >> "$ENV_FILE"; }
+  if grep -q "^export $n=" "$ENV_FILE" 2>/dev/null; then
+    grep -v "^export $n=" "$ENV_FILE" > "$ENV_FILE.tmp" && mv "$ENV_FILE.tmp" "$ENV_FILE"
+  fi
+  echo "export $n=$v" >> "$ENV_FILE"; }
 have(){ "$@" >/dev/null 2>&1; }
 need(){ command -v "$1" >/dev/null 2>&1 || { echo "✋ '$1' not found — required for lab $LAB. Complete Lab 1a setup first." >&2; exit 1; }; }
 log(){ echo "  $*"; }
