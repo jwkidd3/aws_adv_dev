@@ -178,36 +178,55 @@ Class runs **09:00 – 16:00** each day (7 h). Lunch 60 min, two 15-min breaks.
 | Total working time         | 15h 40m        |
 | **Lab share**              | **~72%** ✓     |
 
-## Lab Dependency Chain
+## Resetting & Catching Up Students
 
-Labs build on each other conceptually, but each has a **bootstrap fallback** so no
-lab truly requires successful completion of the previous one. A student who falls
-behind runs `bash ~/environment/aws-adv-dev/bootstrap.sh <labId>` and the script
-creates-or-reuses every prerequisite that lab needs, then exports the expected env
-vars to `~/.aws-adv-dev.env`:
+Because every lab builds on the previous one, two scripts let an instructor drop a
+student into **any** point of the course — or recycle a `userN` between cohorts.
 
+### `bootstrap.sh <labId>` — fast-forward into any lab
+
+On the student's Cloud9: `bash ~/environment/aws-adv-dev/bootstrap.sh <labId>`. It
+idempotently provisions the **prerequisites** that lab needs (create-or-reuse each
+resource) and writes the expected variables to `~/.aws-adv-dev.env`. Re-running is
+safe, and it **hard-refuses** if `USER_ID` is empty or `LabRole` so a forgotten ID
+fails loudly instead of colliding with the class.
+
+| `bootstrap.sh` | Provisions |
+| -------------- | ---------- |
+| `1b` `1c` | env vars only (`USER_ID` / `ACCT` / region) |
+| `2b` `3a` `4a` `5a` `6a` | base CloudFormation stack (S3 + `Bookings-` table + SSM) |
+| `3b` | + Lab 3a SSM config params |
+| `4b` | + **EB monolith** + **Flights SAM stack** |
+| `5b` | + `CloudAir-` single table (created and loaded) |
+| `6b` | + SQS queue/DLQ + SNS topic + subscription + queue policy |
+| `7a` | + **Flights SAM stack** |
+| `7b` | + Flights SAM stack + **Cognito** pool/client/user (and an `ID_TOKEN`) |
+
+It provisions **prerequisites, not a full replay** of every prior lab — leaf
+resources nothing downstream depends on (the Lab 3b secret, the Lab 5b saga) are
+what the student creates *in* that lab. For a near-complete footprint, bootstrap the
+heavy labs: `4b 5b 6b 7b`.
+
+> **Timing:** deep bootstraps create real resources — EB env ~5 min, each SAM stack
+> ~2–3 min — so `bootstrap.sh 4b` or `7b` from a clean slate is ~10–15 min, hands-off.
+
+### `admin/reset-student.sh <userN> [--apply]` — wipe one student clean
+
+Tears down a single student's **entire** footprint in dependency order: SAM stacks
+(flights, saga), Cognito pool, EventBridge bus/rule/archive, SQS/SNS, worker Lambda
++ role, `CloudAir-`/`ProcessedBookings-` tables, secret, `/cloudair/<user>/` SSM
+params, EB env + app, and the base stack (it empties the S3 bucket first). **Dry-run
+by default**; pass `--apply` to delete. Best-effort/idempotent — absent resources are
+skipped — and names derive deterministically from `userN`, so nothing else is touched.
+
+```bash
+admin/reset-student.sh user12              # preview what would be deleted
+admin/reset-student.sh user12 --apply      # clean slate (EB teardown ~3 min)
+bash ~/environment/aws-adv-dev/bootstrap.sh 6a   # then fast-forward that student to Lab 6a
 ```
-1a  (REQUIRED — Cloud9 + LabRole + repo clone)
- ↓
-1b → 1c              bootstrap.sh 1b → USER_ID / ACCT env vars
- ↓
-2a → 2b              bootstrap.sh 2a → base CloudFormation stack (S3 + Bookings table + SSM)
- ↓
-3a → 3b              bootstrap.sh 3a → + base stack
- ↓
-4a → 4b              bootstrap.sh 4a → + base stack (lab deploys the Flights SAM stack)
- ↓
-5a → 5b              bootstrap.sh 5a → + CloudAir single table
- ↓
-6a → 6b              bootstrap.sh 6a → + base stack (lab creates SQS/SNS/EventBridge)
- ↓
-7a → 7b              bootstrap.sh 7a → full spine through the Flights API
-```
 
-The only hard dependency is **Lab 1a** (Cloud9 + `LabRole` attached + AMTC off +
-course repo cloned). The script is idempotent — re-running it detects existing
-resources and skips them, and **hard-refuses** to run if `USER_ID` is empty or
-`LabRole` so a forgotten ID fails loudly instead of colliding with the class.
+The only hard dependency neither script provisions is **Lab 1a** itself (Cloud9 env +
+`LabRole` attached + AMTC off + course repo cloned) — that's the one-time student setup.
 
 ## Repository Layout
 
@@ -215,8 +234,9 @@ resources and skips them, and **hard-refuses** to run if `USER_ID` is empty or
 aws_adv_dev/
 ├── README.md                          ← this file
 ├── AWS Advanced Developing on AWS.docx ← source outline
-├── admin/                             ← instructor account setup (LabRole + region lock)
-│   ├── setup-account.sh
+├── admin/                             ← instructor account + per-student ops
+│   ├── setup-account.sh               ← one-time account setup (LabRole + region lock + EB roles)
+│   ├── reset-student.sh               ← wipe ONE student's resources clean
 │   ├── restrict-region-us-east-1.json
 │   └── README.md
 ├── presentations/                     ← 15 teaching decks (Reveal.js)
@@ -226,7 +246,7 @@ aws_adv_dev/
 │   ├── lab1a-signin-orientation.md
 │   └── … 14 more …
 └── labs/files/                        ← source files students clone in Lab 1a
-    ├── bootstrap.sh                    ← "catch me up" setup for any lab
+    ├── bootstrap.sh                    ← fast-forward a student into any lab (see "Resetting & Catching Up Students")
     ├── lab1/  (smoke_test.py)
     ├── lab2/  (base-stack.yaml, monolith/ Flask app + EB config)
     ├── lab3/  (load_config.py, get_secret.py, params.json)
