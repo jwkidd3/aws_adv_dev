@@ -1,6 +1,6 @@
 # 🧪 Lab 3a — Twelve-Factor Config with SSM Parameter Store
 
-*Hands-On Lab · 45 min · CLI + SDK · Day 1 — Configuration & Secrets*
+*Hands-On Lab · 45 min · CLI + SDK · Day 2 — Configuration & Secrets*
 
 ## Objectives (3 min)
 
@@ -186,7 +186,9 @@ source ~/.aws-adv-dev.env
 
 # Load all /cloudair/$USER_ID/* params into shell variables
 while IFS=$'\t' read -r name value; do
-    key=$(basename "$name" | tr '[:lower:]' '[:upper:]')
+    # Uppercase and turn '-' into '_' so names like 'assets-bucket' (created by
+    # the Lab 2a base stack under this same path) become valid shell variables.
+    key=$(basename "$name" | tr 'a-z-' 'A-Z_')
     export "$key=$value"
     echo "Exported: $key"
 done < <(aws ssm get-parameters-by-path \
@@ -210,7 +212,8 @@ Then start the monolith and hit it:
 
 ```bash
 cd ~/environment/aws-adv-dev/lab2/monolith
-pip install -q -r requirements.txt
+pip3 install -q --user -r requirements.txt \
+    || pip3 install -q --user --break-system-packages -r requirements.txt
 python3 application.py &
 sleep 2
 curl -s http://localhost:5000/ | python3 -m json.tool

@@ -121,7 +121,7 @@ SAM prints a **changeset** showing the resources it will create. Review it — y
 - `AWS::ApiGatewayV2::Api` (the HTTP API)
 - `AWS::Lambda::Function` (the Flights function)
 - `AWS::IAM::Role` (execution role with the DynamoDB read policy)
-- `AWS::ApiGatewayV2::Integration`, `AWS::ApiGatewayV2::Route` (for both `/flights` and `/{proxy+}`)
+- `AWS::ApiGatewayV2::Integration`, `AWS::ApiGatewayV2::Route` (for `/flights` and `/flights/{flightId}`). The `ANY /{proxy+}` catch-all is **not** created in Lab 4a — it is gated behind a CloudFormation `Condition` that stays false while `MonolithUrl` is the placeholder, and is added in Lab 4b.
 - `AWS::ApiGatewayV2::Stage`
 
 Confirm the deploy. SAM creates the stack and streams events — the process takes approximately 2–3 minutes.

@@ -1,6 +1,6 @@
 # 🧪 Lab 3b — Secrets Management & Rotation with Secrets Manager
 
-*Hands-On Lab · 45 min · CLI + SDK · Day 1 — Configuration & Secrets*
+*Hands-On Lab · 45 min · CLI + SDK · Day 2 — Configuration & Secrets*
 
 ## Objectives (3 min)
 
@@ -166,15 +166,25 @@ Secrets Manager can rotate a secret automatically on a schedule using a **rotati
 ```bash
 source ~/.aws-adv-dev.env
 
-# Enable rotation — 30-day schedule, immediately rotate once
+# Try to enable rotation WITHOUT a rotation Lambda — this is expected to FAIL,
+# and the error is the teaching point: rotation cannot run without a Lambda.
 aws secretsmanager rotate-secret \
     --secret-id "cloudair/$USER_ID/db" \
     --rotation-rules AutomaticallyAfterDays=30 \
     --rotate-immediately \
-    --region $AWS_REGION
+    --region $AWS_REGION || true
 ```
 
-> In a real deployment you would first create the rotation Lambda (or use a managed single-user/alternating-user Lambda from the Secrets Manager console) and pass its ARN via `--rotation-lambda-arn`. Without a rotation Lambda configured here, the `rotate-secret` call schedules the rotation but does not create a new version — which is the expected behaviour when no Lambda ARN is supplied.
+> **Expected output:** `InvalidRequestException: No Lambda rotation function ARN is
+> associated with this secret.` This is intentional — Secrets Manager **requires**
+> a rotation Lambda; there is no "rotate without a function." In a real deployment
+> you first create the rotation Lambda (or attach a managed single-user/alternating-user
+> Lambda from the Secrets Manager console) and pass its ARN via `--rotation-lambda-arn`,
+> e.g. `aws secretsmanager rotate-secret --secret-id … --rotation-lambda-arn arn:aws:lambda:…
+> --rotation-rules AutomaticallyAfterDays=30`. Since standing up a real RDS + rotation
+> Lambda is out of scope here, the next block **simulates** exactly what that Lambda's
+> `finishSecret` step does — writing a new `AWSCURRENT` version — so you can see the
+> staging-label mechanics first-hand.
 
 **Observe what a completed rotation looks like** by manually creating a new version to simulate what the rotation Lambda would produce:
 

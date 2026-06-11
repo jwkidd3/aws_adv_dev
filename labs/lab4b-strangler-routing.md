@@ -54,7 +54,7 @@ API Gateway HTTP API  (cloudair-$USER_ID-flights — prod stage)
           GET  /flights        ← still there but no longer reached by clients
 ```
 
-The `MonolithIntegration` and `MonolithCatchAllRoute` resources in `template.yaml` already define this catch-all — they were deployed in Lab 4a but the `MonolithUrl` parameter was set to the placeholder `REPLACE_WITH_EB_CNAME`. This step supplies the real EB CNAME and redeploys.
+The `MonolithIntegration` and `MonolithCatchAllRoute` resources in `template.yaml` define this catch-all, but they were **not** created in Lab 4a — they sit behind a CloudFormation `Condition` (`HasMonolithUrl`) that is false while `MonolithUrl` is the placeholder `REPLACE_WITH_EB_CNAME`. This step supplies the real EB CNAME, which satisfies the condition, so the redeploy creates them.
 
 > **Anti-corruption layer:** the facade URL never exposes the EB CNAME to clients. When the monolith is eventually decommissioned (or replaced route by route), only the API Gateway integrations change — no client code needs updating.
 
@@ -70,13 +70,13 @@ source ~/.aws-adv-dev.env
 curl -s "$FLIGHTS_API_URL/flights" | python3 -m json.tool
 ```
 
-Now test a route that is **not** yet extracted — the catch-all should forward to the monolith, but because `MonolithUrl` is still the placeholder, you expect a 5xx or connection error:
+Now test a route that is **not** yet extracted. The catch-all route does not exist yet (it is created in Step 3), so API Gateway has nothing to match any path other than `/flights`:
 
 ```bash
-curl -v "$FLIGHTS_API_URL/" 2>&1 | grep -E "< HTTP|error"
+curl -s -o /dev/null -w "%{http_code}\n" "$FLIGHTS_API_URL/"
 ```
 
-You will see an API Gateway error (typically `502 Bad Gateway`) because the HTTP_PROXY integration cannot reach `REPLACE_WITH_EB_CNAME`. This confirms the catch-all route exists but needs the real EB URL.
+You will see **`404`** (API Gateway `{"message":"Not Found"}`) — there is no `ANY /{proxy+}` route yet. After Step 3 supplies the real `MonolithUrl`, this same request will forward to the monolith and return its home-page JSON.
 
 ---
 
@@ -102,7 +102,7 @@ sam deploy \
     --no-confirm-changeset
 ```
 
-SAM computes a changeset — only the `MonolithIntegration` resource changes (the `IntegrationUri` value updates from the placeholder to the real EB URL). The Lambda function and its routes are unchanged, so the changeset is small.
+SAM computes a changeset — supplying a real `MonolithUrl` satisfies the `HasMonolithUrl` condition, so the changeset **creates** the `MonolithIntegration` and `MonolithCatchAllRoute` resources (they did not exist after Lab 4a). The Lambda function and its `/flights` routes are unchanged, so the changeset is small.
 
 > `--no-confirm-changeset` skips the interactive prompt. Appropriate here because you have already reviewed the changeset logic. In production pipelines, always review changesets before applying.
 

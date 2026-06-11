@@ -30,6 +30,13 @@ Parameters:
       Used in Lab 4b for the catch-all HTTP_PROXY route. Leave the default
       value when deploying for Lab 4a only.
 
+# ── Conditions ────────────────────────────────────────────────────────────────
+# The Strangler catch-all proxy resources are only created once a REAL monolith
+# URL is supplied (Lab 4b). With the Lab 4a placeholder they are skipped, so the
+# Lab 4a deploy isn't blocked by an invalid HTTP_PROXY integration URI.
+Conditions:
+  HasMonolithUrl: !Not [!Equals [!Ref MonolithUrl, "REPLACE_WITH_EB_CNAME"]]
+
 # ── Globals ───────────────────────────────────────────────────────────────────
 Globals:
   Function:
@@ -94,6 +101,7 @@ Resources:
 
   MonolithIntegration:
     Type: AWS::ApiGatewayV2::Integration
+    Condition: HasMonolithUrl
     Properties:
       ApiId: !Ref FlightsApi
       IntegrationType: HTTP_PROXY
@@ -103,6 +111,7 @@ Resources:
 
   MonolithCatchAllRoute:
     Type: AWS::ApiGatewayV2::Route
+    Condition: HasMonolithUrl
     Properties:
       ApiId: !Ref FlightsApi
       RouteKey: "ANY /{proxy+}"
