@@ -141,11 +141,12 @@ aws cognito-idp admin-set-user-password \
 ```bash
 source ~/.aws-adv-dev.env
 
+# NOTE: --auth-parameters is a map — the key=value pairs must be COMMA-separated
+# (no spaces). Space-separating them makes the CLI treat PASSWORD=... as an
+# unknown option.
 AUTH_RESULT=$(aws cognito-idp initiate-auth \
     --auth-flow USER_PASSWORD_AUTH \
-    --auth-parameters \
-        USERNAME="$USER_ID@cloudair.example" \
-        PASSWORD="CloudAir1!" \
+    --auth-parameters USERNAME="$USER_ID@cloudair.example",PASSWORD="CloudAir1!" \
     --client-id $CLIENT_ID \
     --region $AWS_REGION)
 
