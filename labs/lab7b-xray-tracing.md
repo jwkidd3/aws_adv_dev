@@ -129,6 +129,8 @@ aws iam attach-role-policy \
 
 ```bash
 source ~/.aws-adv-dev.env
+cd ~/environment/aws-adv-dev/lab4
+sam build
 
 sam deploy \
     --stack-name "cloudair-$USER_ID-flights" \
@@ -215,7 +217,7 @@ of indexed annotations vs unindexed metadata.
 source ~/.aws-adv-dev.env
 
 sam logs \
-    --name "cloudair-$USER_ID-flights" \
+    --name FlightsFn \
     --stack-name "cloudair-$USER_ID-flights" \
     --tail \
     --region $AWS_REGION
@@ -309,6 +311,64 @@ aws lambda delete-function \
 aws dynamodb delete-table \
     --table-name "ProcessedBookings-$USER_ID" \
     --region $AWS_REGION
+
+# Lab 5a single-table (CloudAir-$USER_ID)
+aws dynamodb delete-table \
+    --table-name "CloudAir-$USER_ID" \
+    --region $AWS_REGION 2>/dev/null || true
+```
+
+### Delete worker IAM role (Lab 6a)
+
+```bash
+source ~/.aws-adv-dev.env
+
+# Detach managed policies before deleting the role
+aws iam detach-role-policy \
+    --role-name "CloudAirWorkerRole-$USER_ID" \
+    --policy-arn arn:aws:iam::aws:policy/service-role/AWSLambdaSQSQueueExecutionRole \
+    2>/dev/null || true
+
+aws iam detach-role-policy \
+    --role-name "CloudAirWorkerRole-$USER_ID" \
+    --policy-arn arn:aws:iam::aws:policy/AmazonDynamoDBFullAccess \
+    2>/dev/null || true
+
+aws iam delete-role \
+    --role-name "CloudAirWorkerRole-$USER_ID" \
+    2>/dev/null || true
+```
+
+### Delete Secrets Manager secret (Lab 3b)
+
+```bash
+source ~/.aws-adv-dev.env
+
+aws secretsmanager delete-secret \
+    --secret-id "cloudair/$USER_ID/db" \
+    --force-delete-without-recovery \
+    --region $AWS_REGION 2>/dev/null || true
+```
+
+### Delete extra SSM parameters (Lab 3a)
+
+```bash
+source ~/.aws-adv-dev.env
+
+# Delete parameters under /cloudair/$USER_ID/ that were added by Lab 3a
+# (base-stack parameters under this path are removed when the base CloudFormation
+# stack is deleted in the next step — these commands handle any extras)
+PARAM_NAMES=$(aws ssm get-parameters-by-path \
+    --path "/cloudair/$USER_ID" \
+    --query "Parameters[].Name" \
+    --output text \
+    --region $AWS_REGION 2>/dev/null)
+
+if [ -n "$PARAM_NAMES" ]; then
+    aws ssm delete-parameters \
+        --names $PARAM_NAMES \
+        --region $AWS_REGION 2>/dev/null || true
+fi
 ```
 
 ### Delete the booking saga SAM stack (Lab 5b)

@@ -9,7 +9,10 @@ Entry points:
   handlers.cancel_reservation — CancelReservation (compensating transaction)
 
 Simulating failure:
-  Pass  {"fail": true}  in the input to any handler to trigger its error class.
+  Each handler checks its own step-specific flag:
+    {"failReserve": true}  — triggers SeatUnavailableError in reserve_seat
+    {"failPayment": true}  — triggers PaymentDeclinedError in charge_payment
+    {"failConfirm": true}  — triggers a generic error in confirm_booking
   The Step Functions Catch block then routes to the compensating path.
 """
 
@@ -42,13 +45,13 @@ def reserve_seat(event: dict, context) -> dict:
     Reserve a seat on the requested flight.
 
     Input keys (all optional for demo purposes):
-      flightId   : str  — e.g. "AA101"
-      seatNumber : str  — e.g. "14A"
-      fail       : bool — set True to simulate SeatUnavailableError
+      flightId    : str  — e.g. "AA101"
+      seatNumber  : str  — e.g. "14A"
+      failReserve : bool — set True to simulate SeatUnavailableError
     """
     logger.info("ReserveSeat input: %s", json.dumps(event))
 
-    if event.get("fail"):
+    if event.get("failReserve"):
         raise SeatUnavailableError(
             f"Seat {event.get('seatNumber', '??')} is no longer available "
             f"on flight {event.get('flightId', '??')}"
@@ -71,13 +74,13 @@ def charge_payment(event: dict, context) -> dict:
 
     Reads reservationResult from the merged event (Step Functions ResultPath).
     Input keys:
-      customerId : str   — e.g. "CUST001"
-      amount     : float — e.g. 299.00
-      fail       : bool  — set True to simulate PaymentDeclinedError
+      customerId   : str   — e.g. "CUST001"
+      amount       : float — e.g. 299.00
+      failPayment  : bool  — set True to simulate PaymentDeclinedError
     """
     logger.info("ChargePayment input: %s", json.dumps(event))
 
-    if event.get("fail"):
+    if event.get("failPayment"):
         raise PaymentDeclinedError(
             f"Payment declined for customer {event.get('customerId', '??')}: "
             "card issuer rejected the transaction."
@@ -99,13 +102,13 @@ def confirm_booking(event: dict, context) -> dict:
     Write the final confirmed booking record.
 
     Input keys:
-      customerId : str
-      flightId   : str
-      fail       : bool — set True to simulate a generic States.ALL error
+      customerId  : str
+      flightId    : str
+      failConfirm : bool — set True to simulate a generic States.ALL error
     """
     logger.info("ConfirmBooking input: %s", json.dumps(event))
 
-    if event.get("fail"):
+    if event.get("failConfirm"):
         # Raise a plain Exception — Step Functions catches it as States.TaskFailed
         raise Exception("Booking confirmation service temporarily unavailable.")
 

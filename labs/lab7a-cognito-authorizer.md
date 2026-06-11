@@ -34,9 +34,10 @@ echo "API_URL=$API_URL"
 echo "export API_URL=$API_URL" >> ~/.aws-adv-dev.env
 ```
 
-> **Starting fresh?** `bash ~/environment/aws-adv-dev/bootstrap.sh 7a` deploys
-> the SAM Flights stack and sets `$API_URL` in `~/.aws-adv-dev.env` so you
-> can proceed from Step 1.
+> **Starting fresh?** `bash ~/environment/aws-adv-dev/bootstrap.sh 7a` ensures
+> the base CloudFormation stack is present and the env file is populated. It does
+> **not** deploy the Flights SAM stack — Lab 4a must be completed first before the
+> `cloudair-$USER_ID-flights` stack and `$API_URL` are available.
 
 ---
 
@@ -223,6 +224,7 @@ make two changes:
 
 ```bash
 source ~/.aws-adv-dev.env
+cd ~/environment/aws-adv-dev/lab4
 
 sam deploy \
     --stack-name "cloudair-$USER_ID-flights" \

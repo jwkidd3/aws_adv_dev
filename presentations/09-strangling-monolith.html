@@ -59,15 +59,21 @@
     <li>Clients see one hostname; internal routing is invisible to them</li>
     <li>Over time: add more Lambda routes, shrink the proxy routes</li>
   </ul>
-  <pre><code># SAM — proxy catch-all to legacy monolith
-LegacyProxy:
-  Type: AWS::Serverless::HttpApi
+  <pre><code># Catch-all proxy route on the Lab 4a HTTP API → the Beanstalk monolith
+LegacyProxyIntegration:
+  Type: AWS::ApiGatewayV2::Integration
   Properties:
+    ApiId: !Ref FlightsApi
+    IntegrationType: HTTP_PROXY
+    IntegrationUri: !Sub "http://${MonolithUrl}/{proxy}"
+    IntegrationMethod: ANY
+    PayloadFormatVersion: "1.0"
+LegacyProxyRoute:
+  Type: AWS::ApiGatewayV2::Route
+  Properties:
+    ApiId: !Ref FlightsApi
     RouteKey: "ANY /{proxy+}"
-    Integration:
-      Type: HTTP_PROXY
-      Uri: !Sub "http://${MonolithUrl}/{proxy+}"
-      Method: ANY</code></pre>
+    Target: !Sub "integrations/${LegacyProxyIntegration}"</code></pre>
 </section>
 
 <section>

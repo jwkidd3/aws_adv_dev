@@ -80,7 +80,9 @@ for f in lab1/smoke_test.py \
          lab4/template.yaml lab4/src/app.py \
          lab5/create_table.py lab5/items.json lab5/booking-saga.asl.json \
          lab5/handlers.py lab5/template.yaml \
+         lab5/bulk_load.py lab5/queries.py \
          lab6/publish_booking.py lab6/worker.py lab6/put_event.py \
+         lab6/event-pattern.json \
          lab7/xray_handler.py bootstrap.sh; do
   [ -f "$f" ] && echo "OK   $f" || echo "MISS $f"
 done
@@ -94,9 +96,9 @@ chmod +x ~/environment/aws-adv-dev/bootstrap.sh
 - ✅ Cloud9 `aws-adv-dev-userN` created on **m5.large** with **SSH**
 - ✅ Underlying EC2 instance has `LabRole` attached and AMTC is off
 - ✅ `aws sts get-caller-identity` returns an `assumed-role/LabRole/…` ARN
-- ✅ All 7 verify lines show `OK`
+- ✅ All 21 verify lines show `OK`
 
 > Class conventions — shown now, enforced in later labs:
 
-- **Resource prefix:** everything you create starts with your user — `student-user1-*`, `Items-user1`, `lab4-user1`. IAM enforces this; off-prefix actions return `AccessDenied`.
+- **Resource prefix:** everything you create starts with your user — `cloudair-user1-*`, `Bookings-user1`, `CloudAir-user1`. This is a **naming convention** to avoid collisions in the shared account — it is *not* IAM-enforced (you are a full admin within `us-east-1`).
 - **Editor vs. terminal:** source/config files are authored in the Cloud9 editor; commands ≤ ~5 lines go into the terminal.

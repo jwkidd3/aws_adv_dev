@@ -156,7 +156,7 @@ Use the helper script at `~/environment/aws-adv-dev/lab6/publish_booking.py`:
 source ~/.aws-adv-dev.env
 cd ~/environment/aws-adv-dev/lab6
 
-python publish_booking.py $TOPIC_ARN "BK-$(date +%s)" $USER_ID
+python3 publish_booking.py $TOPIC_ARN "BK-$(date +%s)" $USER_ID
 ```
 
 Open the file in the Cloud9 editor and review:

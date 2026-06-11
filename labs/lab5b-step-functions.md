@@ -109,11 +109,18 @@ This handles transient Lambda infrastructure errors (throttles, cold-start timeo
 Each handler:
 - Logs its full input with `logger.info` — visible in CloudWatch Logs
 - Returns a structured dict on success — merged into the execution state via `ResultPath`
-- Raises a named exception when `event.get("fail")` is truthy — Step Functions matches the exception class name against `ErrorEquals`
+- Raises a named exception when its own step-specific flag is truthy — Step Functions matches the exception class name against `ErrorEquals`
+
+Each handler checks its own flag independently:
+- `reserve_seat` checks `failReserve` — raises `SeatUnavailableError`
+- `charge_payment` checks `failPayment` — raises `PaymentDeclinedError`
+- `confirm_booking` checks `failConfirm` — raises a generic exception
+
+This means setting `"failPayment": true` in the execution input causes `ReserveSeat` to succeed (it only looks at `failReserve`), then `ChargePayment` raises `PaymentDeclinedError` → `CancelReservation` compensation runs. Setting `"failReserve": true` fails at `ReserveSeat` with no compensation.
 
 The `cancel_reservation` handler is intentionally idempotent — calling it twice with the same `reservationId` produces the same result. This is a saga requirement: compensating transactions must be safe to retry.
 
-> You do not need to modify `handlers.py` for this lab. The `fail` flag in the execution input is sufficient to trigger the compensation path.
+> You do not need to modify `handlers.py` for this lab. The step-specific flags in the execution input are sufficient to trigger each compensation path.
 
 ---
 
@@ -204,7 +211,7 @@ Expected: `status = SUCCEEDED`.
 
 ## Step 5 — Execute the Failure Path (8 min)
 
-Trigger a `PaymentDeclinedError` by setting `"fail": true` in the `ChargePayment` Lambda's portion of the input. The state machine routes to `CancelReservation` (compensating transaction), then ends at `BookingFailed`.
+Trigger a `PaymentDeclinedError` by setting `"failPayment": true` in the execution input. Each handler checks its own step-specific flag, so `ReserveSeat` (which checks `failReserve`) succeeds, then `ChargePayment` (which checks `failPayment`) raises `PaymentDeclinedError`. The state machine routes to `CancelReservation` (compensating transaction), then ends at `BookingFailed`.
 
 ```bash
 source ~/.aws-adv-dev.env
@@ -214,12 +221,12 @@ FAIL_NAME="payment-fail-$(date +%s)"
 aws stepfunctions start-execution \
   --state-machine-arn $STATE_MACHINE_ARN \
   --name $FAIL_NAME \
-  --input '{"flightId":"AA101","seatNumber":"14A","customerId":"CUST001","amount":299.00,"fail":true}' \
+  --input '{"flightId":"AA101","seatNumber":"14A","customerId":"CUST001","amount":299.00,"failPayment":true}' \
   --region $AWS_REGION \
   --output json | python3 -c "import sys,json; e=json.load(sys.stdin); print('Execution ARN:', e['executionArn'])"
 ```
 
-> The `fail` flag is passed to all Lambda handlers in the merged event. `ReserveSeat` ignores it (it checks its own step's input); `ChargePayment` sees it and raises `PaymentDeclinedError`.
+> `failPayment: true` is seen only by `ChargePayment` (which checks `event.get("failPayment")`); `ReserveSeat` checks `failReserve` and ignores it, so the seat is reserved successfully before the payment step raises `PaymentDeclinedError`.
 
 **Inspect the compensation path in the Console:**
 
@@ -235,7 +242,7 @@ aws stepfunctions start-execution \
 aws stepfunctions start-execution \
   --state-machine-arn $STATE_MACHINE_ARN \
   --name "reserve-fail-$(date +%s)" \
-  --input '{"flightId":"DL305","seatNumber":"22C","customerId":"CUST001","amount":279.00,"fail":true}' \
+  --input '{"flightId":"DL305","seatNumber":"22C","customerId":"CUST001","amount":279.00,"failReserve":true}' \
   --region $AWS_REGION > /dev/null
 
 # After ~5 seconds:

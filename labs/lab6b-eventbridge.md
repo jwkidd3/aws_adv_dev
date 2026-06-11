@@ -162,7 +162,7 @@ Use the helper script at `~/environment/aws-adv-dev/lab6/put_event.py`:
 source ~/.aws-adv-dev.env
 cd ~/environment/aws-adv-dev/lab6
 
-python put_event.py "cloudair-$USER_ID" "BK-$(date +%s)" $USER_ID
+python3 put_event.py "cloudair-$USER_ID" "BK-$(date +%s)" $USER_ID
 ```
 
 Open `put_event.py` in the editor. Notice:

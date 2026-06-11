@@ -162,7 +162,7 @@ aws events start-replay \
   --event-source-arn arn:aws:events:us-east-1:$ACCT:archive/cloudair-$USER_ID-booking-archive \
   --event-start-time 2025-01-01T00:00:00Z \
   --event-end-time   2025-01-02T00:00:00Z \
-  --destination '{"Arn":"arn:aws:events:us-east-1:$ACCT:event-bus/cloudair-$USER_ID-bus"}'</code></pre>
+  --destination "{\"Arn\":\"arn:aws:events:us-east-1:${ACCT}:event-bus/cloudair-${USER_ID}-bus\"}"</code></pre>
   <p class="small">Replay enables testing new consumers against production-shaped historical data — a critical resilience and correctness practice.</p>
 </section>
 

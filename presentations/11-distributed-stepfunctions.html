@@ -85,8 +85,9 @@
     "ProcessPayment": {
       "Type": "Task",
       "Resource": "arn:aws:lambda:us-east-1:ACCT:function:cloudair-$USER_ID-pay",
-      "Next": "ConfirmBooking",
-      "Retry": [{ "ErrorEquals": ["PaymentTimeout"], "MaxAttempts": 2, "IntervalSeconds": 3 }]
+      "Retry": [{ "ErrorEquals": ["PaymentTimeout"], "MaxAttempts": 2, "IntervalSeconds": 3 }],
+      "Catch": [{ "ErrorEquals": ["States.ALL"], "Next": "ReleaseSeat" }],
+      "Next": "ConfirmBooking"
     },
     "ConfirmBooking": { "Type": "Task",
       "Resource": "arn:aws:lambda:us-east-1:ACCT:function:cloudair-$USER_ID-confirm",

@@ -154,7 +154,7 @@
     <li><strong>Not appropriate for:</strong> strongly consistent reads (DAX cannot serve them), write-heavy tables</li>
   </ul>
   <pre><code>import amazondax, boto3
-client = amazondax.AmazonDaxClient.resource(
+client = amazondax.AmazonDaxClient(
     endpoint_url="dax://cloudair-dax.xyz.dax.us-east-1.amazonaws.com",
     region_name="us-east-1")
 table = client.Table("cloudair-prod-main")</code></pre>

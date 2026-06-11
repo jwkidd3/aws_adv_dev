@@ -53,7 +53,7 @@
 <section>
   <h2>The Scenario — Cloud Air</h2>
   <ul>
-    <li><strong>Cloud Air</strong> is a fictional airline with a monolithic on-premises booking system (Python/Flask on a single EC2 instance, one relational DB)</li>
+    <li><strong>Cloud Air</strong> is a fictional airline with a monolithic on-premises booking system (Python/Flask on a bare-metal co-located server, one relational DB)</li>
     <li>The system is brittle, hard to scale, and impossible to deploy without a full-stack outage</li>
     <li>Over three days you migrate it: strangler-fig decomposition → Lambda microservices → event-driven resilience</li>
   </ul>

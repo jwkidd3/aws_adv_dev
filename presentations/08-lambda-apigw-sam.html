@@ -179,11 +179,11 @@ Layers:
     <li><strong>Contract testing</strong> — validate event shapes with JSON Schema; catch API Gateway ↔ Lambda mismatches early</li>
   </ul>
   <pre><code># moto-based unit test pattern
-from moto import mock_dynamodb
+from moto import mock_aws
 import boto3, json
 from search import handler
 
-@mock_dynamodb
+@mock_aws
 def test_search_returns_flights():
     # set up mock table, seed data, then:
     resp = handler({"pathParameters": {"origin":"JFK","dest":"LAX"}}, {})
