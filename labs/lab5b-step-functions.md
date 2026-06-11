@@ -19,6 +19,7 @@
 - Lab 5a complete — `CloudAir-$USER_ID` DynamoDB table is active
 - `~/.aws-adv-dev.env` sourced; `$USER_ID`, `$ACCT`, `$AWS_REGION` set
 - SAM CLI installed in Cloud9 (`sam --version` should print `1.x` or later)
+- **Python 3.12 installed** (Lab 1a Step 5) — the four saga stubs run on the `python3.12` runtime, so `sam build` needs `python3.12` on `PATH`. Verify with `python3.12 --version`; if missing, `sudo dnf install -y python3.12`.
 
 ```bash
 source ~/.aws-adv-dev.env

@@ -19,6 +19,7 @@
 
 - Labs 4a–7a complete — `cloudair-$USER_ID-flights` stack deployed with Cognito JWT authorizer
 - `~/.aws-adv-dev.env` exists with `$USER_ID`, `$ACCT`, `$AWS_REGION`, `$API_URL`, `$ID_TOKEN`
+- **Python 3.12 installed** (Lab 1a Step 5) — the Flights function runs on the `python3.12` runtime, so the `sam build` in Step 4 needs `python3.12` on `PATH`. Verify with `python3.12 --version`; if missing, `sudo dnf install -y python3.12`.
 
 ```bash
 source ~/.aws-adv-dev.env
