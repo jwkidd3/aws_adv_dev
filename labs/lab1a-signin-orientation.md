@@ -72,6 +72,8 @@ python3 -c "import boto3; print(boto3.__version__)"
 > If the ARN still shows `user/user1` or an AMTC session, redo Step 4 — Cloud9 sometimes needs a second toggle. `--user` installs boto3 into `~/.local`, which is on Python's default import path.
 >
 > **Why Python 3.12?** The Flights microservice (Lab 4), saga stubs (Lab 5b), and X-Ray handler (Lab 7) all run on the `python3.12` Lambda runtime, and their handlers use 3.10+ syntax. Installing `python3.12` here lets `sam build` produce a runtime-matched package without `--use-container`. If you skip this, `sam build` fails with *"Binary validation failed for python … runtime: python3.12."*
+>
+> **Note — your default `python3` stays 3.9.** `dnf install python3.12` adds a *separate* `python3.12` binary; it does **not** repoint `python3` (still 3.9). That's intentional: `sam build` finds the interpreter by the template's `Runtime: python3.12` (it looks for `python3.12` by name, not `python3`), while the scripts you run directly — `python3 load_config.py`, etc. — and the `boto3` you just installed stay on 3.9. So verify with `python3.12 --version`, **not** `python3 --version`. Don't switch the default (e.g. via `alternatives`) — that would hide the 3.9 `boto3` from those script steps.
 
 ## Step 6 — Clone the Course Repo & Verify (3 min)
 
