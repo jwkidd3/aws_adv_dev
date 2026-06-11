@@ -58,7 +58,12 @@ appears alongside the `default` and `aws.partner` buses.
 ## Step 2 — Grant the Queue Permission to Receive Events (5 min)
 
 EventBridge needs `sqs:SendMessage` permission on the target queue, just as SNS
-did in Lab 6a. The condition locks delivery to events originating from your bus only.
+did in Lab 6a. **Important:** for an EventBridge → SQS target the `aws:SourceArn`
+in the condition is the **rule ARN**, *not* the event-bus ARN. The rule is created
+in Step 3, so we authorize it ahead of time with an `ArnLike` wildcard over every
+rule on this bus (`…:rule/cloudair-$USER_ID/*`). (Using the bus ARN here is a
+common mistake — events would match the rule but every delivery to SQS would fail
+with `FailedInvocations` and the queue would stay empty.)
 
 ```bash
 source ~/.aws-adv-dev.env
@@ -83,7 +88,7 @@ aws sqs set-queue-attributes \
                     \\\"Principal\\\": {\\\"Service\\\": \\\"events.amazonaws.com\\\"},
                     \\\"Action\\\": \\\"sqs:SendMessage\\\",
                     \\\"Resource\\\": \\\"$QUEUE_ARN\\\",
-                    \\\"Condition\\\": {\\\"ArnEquals\\\": {\\\"aws:SourceArn\\\": \\\"$BUS_ARN\\\"}}
+                    \\\"Condition\\\": {\\\"ArnLike\\\": {\\\"aws:SourceArn\\\": \\\"arn:aws:events:$AWS_REGION:$ACCT:rule/cloudair-$USER_ID/*\\\"}}
                 }
             ]
         }\"
@@ -155,6 +160,20 @@ and confirm the `cloudair-$USER_ID-bookings` SQS queue is listed under **Targets
 ---
 
 ## Step 5 — Publish a BookingCreated Event (7 min)
+
+> **First, pause the Lab 6a worker.** That worker's SQS event-source mapping is
+> still attached to this queue and will instantly consume (and, because it expects
+> an SNS/booking shape, fail on) the EventBridge envelope — leaving nothing for you
+> to inspect in Step 6. Disable the mapping so the message stays in the queue:
+>
+> ```bash
+> source ~/.aws-adv-dev.env
+> WORKER_UUID=$(aws lambda list-event-source-mappings \
+>     --function-name "cloudair-$USER_ID-worker" \
+>     --query "EventSourceMappings[0].UUID" --output text --region $AWS_REGION)
+> aws lambda update-event-source-mapping --uuid $WORKER_UUID --no-enabled --region $AWS_REGION
+> # (re-enable later with --enabled if you want the worker draining the queue again)
+> ```
 
 Use the helper script at `~/environment/aws-adv-dev/lab6/put_event.py`:
 
