@@ -230,11 +230,23 @@ make two changes:
     Description: Cognito App Client ID
 ```
 
-**Redeploy with the new parameters:**
+**Rebuild, then redeploy with the new parameters:**
+
+You edited the **source** `template.yaml`, but `sam deploy` ships the *built*
+template under `.aws-sam/build/` — the one produced by `sam build` back in Lab 4.
+If you skip the rebuild, SAM compares the stale built template (no authorizer)
+against the deployed stack, finds no difference, and reports **"No changes to
+deploy"** — your `Auth` block never ships. Always `sam build` after editing the
+template. Delete `.aws-sam` first to force a clean rebuild so no cached artifact
+masks the change:
 
 ```bash
 source ~/.aws-adv-dev.env
 cd ~/environment/aws-adv-dev/lab4
+
+# Force a clean rebuild so the new Auth block is in the built template
+rm -rf .aws-sam
+sam build
 
 sam deploy \
     --stack-name "cloudair-$USER_ID-flights" \
@@ -247,6 +259,10 @@ sam deploy \
     --region $AWS_REGION
 ```
 
+> **Why `rm -rf .aws-sam`?** `sam build` normally regenerates the built template,
+> but a leftover cached build can make SAM believe nothing changed, so the deploy
+> finds no diff. Removing `.aws-sam` guarantees the rebuild reflects your edit.
+>
 > SAM `deploy` without `--guided` uses the `samconfig.toml` saved during the
 > Lab 4 deployment. If `samconfig.toml` is missing, add `--s3-bucket <your-sam-bucket>`
 > and `--capabilities CAPABILITY_IAM`.

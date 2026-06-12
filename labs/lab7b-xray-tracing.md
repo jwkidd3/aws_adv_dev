@@ -133,6 +133,10 @@ aws iam attach-role-policy \
 ```bash
 source ~/.aws-adv-dev.env
 cd ~/environment/aws-adv-dev/lab4
+
+# Force a clean rebuild so the instrumented app.py is in the built template.
+# A leftover .aws-sam cache can make SAM report "No changes to deploy".
+rm -rf .aws-sam
 sam build
 
 sam deploy \
