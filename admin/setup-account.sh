@@ -51,11 +51,13 @@ cat > "$TMP/labrole-trust.json" <<'JSON'
     "Action":"sts:AssumeRole"}] }
 JSON
 # The labs create/destroy IAM roles & policies (Lambda exec role, StudentLambdaRole,
-# instance profiles) and pass roles to Lambda / API Gateway / Elastic Beanstalk.
-# PowerUserAccess covers everything else; this inline policy adds just the IAM
-# writes the labs need. Elastic Beanstalk (Lab 2b) is the reason elasticbeanstalk
-# + ec2 appear in PassRole and CreateServiceLinkedRole is granted — `eb create`
-# must pass aws-elasticbeanstalk-service-role and the ec2 instance profile.
+# instance profiles) and pass roles to Lambda / API Gateway / Elastic Beanstalk /
+# Step Functions. PowerUserAccess covers everything else; this inline policy adds
+# just the IAM writes the labs need. Notes on PassRole's service list:
+#   - elasticbeanstalk + ec2 — Lab 2b `eb create` passes aws-elasticbeanstalk-
+#     service-role and the ec2 instance profile (also CreateServiceLinkedRole).
+#   - states — Lab 5b's CloudFormation passes the saga state-machine execution
+#     role to Step Functions (states.amazonaws.com).
 cat > "$TMP/labrole-iam.json" <<'JSON'
 { "Version":"2012-10-17",
   "Statement":[
@@ -74,7 +76,8 @@ cat > "$TMP/labrole-iam.json" <<'JSON'
      "Action":"iam:PassRole","Resource":"*",
      "Condition":{"StringEquals":{"iam:PassedToService":[
        "lambda.amazonaws.com","apigateway.amazonaws.com",
-       "elasticbeanstalk.amazonaws.com","ec2.amazonaws.com"]}}},
+       "elasticbeanstalk.amazonaws.com","ec2.amazonaws.com",
+       "states.amazonaws.com"]}}},
     {"Sid":"ElasticBeanstalkServiceLinkedRole","Effect":"Allow",
      "Action":"iam:CreateServiceLinkedRole","Resource":"*",
      "Condition":{"StringEquals":{"iam:AWSServiceName":"elasticbeanstalk.amazonaws.com"}}}
