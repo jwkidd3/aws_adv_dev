@@ -44,7 +44,7 @@ Work through each section:
 | `FlightsApi` | `AWS::Serverless::HttpApi` — HTTP API with a `prod` stage; payload format version 2.0 |
 | `FlightsFn` | `AWS::Serverless::Function` — the extracted Flights Lambda; DynamoDB read-only policy |
 | `Events` | Two `HttpApi` events: `GET /flights` and `GET /flights/{flightId}` |
-| `MonolithIntegration` / `MonolithCatchAllRoute` | Raw `AWS::ApiGatewayV2` resources for the `ANY /{proxy+}` HTTP_PROXY route — wired up in Lab 4b |
+| `FlightsApi.DefinitionBody` | An OpenAPI `ANY /{proxy+}` HTTP_PROXY route to the monolith, baked **into the HttpApi's managed definition** (not a separate escape-hatch resource). It points at `MonolithUrl` — a dummy in 4a, the real EB CNAME in 4b |
 | `Outputs` | `FlightsApiUrl`, `FlightsFunctionArn`, `FlightsFunctionName` |
 
 Key decisions to understand:
@@ -52,7 +52,7 @@ Key decisions to understand:
 - **`DynamoDBReadPolicy`** — SAM policy template that grants `dynamodb:GetItem`, `Scan`, `Query`, `DescribeTable` on exactly the named table. No write permissions; the microservice is read-only.
 - **`arm64` (Graviton)** — Lambda functions on arm64 are approximately 20% cheaper than x86_64 at equivalent performance. Python 3.12 on arm64 is fully supported.
 - **`Tracing: Active`** — enables X-Ray tracing for every invocation. Used in Lab 7b.
-- **`MonolithUrl` parameter defaults to `"REPLACE_WITH_EB_CNAME"`** — safe placeholder for Lab 4a; the HTTP_PROXY route will not function until a real URL is supplied.
+- **`MonolithUrl` parameter defaults to `"http://replace-me.invalid"`** — a *well-formed* dummy URL so the proxy integration is valid and the Lab 4a deploy succeeds. The `ANY /{proxy+}` route exists from 4a on, but points at this dead host until Lab 4b sets the real EB CNAME. (The default keeps the `http://` scheme — a bare hostname would make API Gateway reject the integration.) Keeping the proxy in the API's `DefinitionBody` is deliberate: a later redeploy that regenerates the HttpApi definition — like Lab 7a adding the authorizer — would silently drop a separate escape-hatch route, but not one inside the managed definition.
 
 Now open `~/environment/aws-adv-dev/lab4/src/app.py`:
 
@@ -111,7 +111,7 @@ Answer each prompt as follows:
 | AWS Region | `us-east-1` |
 | Parameter UserId | your `$USER_ID` value (e.g. `user1`) |
 | Parameter BookingsTableName | your `$BOOKINGS_TABLE` value (e.g. `Bookings-user1`) |
-| Parameter MonolithUrl | press Enter to accept `REPLACE_WITH_EB_CNAME` — Lab 4b will update this |
+| Parameter MonolithUrl | press Enter to accept `http://replace-me.invalid` — Lab 4b will set the real EB URL |
 | Confirm changes before deploy | `y` |
 | Allow SAM CLI IAM role creation | `y` |
 | Disable rollback | `n` |
@@ -125,7 +125,7 @@ SAM prints a **changeset** showing the resources it will create. Review it — y
 - `AWS::ApiGatewayV2::Api` (the HTTP API)
 - `AWS::Lambda::Function` (the Flights function)
 - `AWS::IAM::Role` (execution role with the DynamoDB read policy)
-- `AWS::ApiGatewayV2::Integration`, `AWS::ApiGatewayV2::Route` (for `/flights` and `/flights/{flightId}`). The `ANY /{proxy+}` catch-all is **not** created in Lab 4a — it is gated behind a CloudFormation `Condition` that stays false while `MonolithUrl` is the placeholder, and is added in Lab 4b.
+- `AWS::ApiGatewayV2::Integration`, `AWS::ApiGatewayV2::Route` — for `/flights`, `/flights/{flightId}`, **and** the `ANY /{proxy+}` catch-all (all three live in the HttpApi's managed definition). The proxy points at the dummy `MonolithUrl` for now; Lab 4b swaps in the real EB URL.
 - `AWS::ApiGatewayV2::Stage`
 
 Confirm the deploy. SAM creates the stack and streams events — the process takes approximately 2–3 minutes.

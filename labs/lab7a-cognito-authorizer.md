@@ -195,7 +195,7 @@ make two changes:
     Type: AWS::Serverless::HttpApi
     Properties:
       StageName: prod
-      Auth:
+      Auth:                        # <-- add this block, right after StageName
         DefaultAuthorizer: CognitoJwtAuth
         Authorizers:
           CognitoJwtAuth:
@@ -204,10 +204,19 @@ make two changes:
               issuer: !Sub "https://cognito-idp.${AWS::Region}.amazonaws.com/${PoolId}"
               audience:
                 - !Ref AppClientId
+      DefinitionBody:              # <-- leave the existing DefinitionBody unchanged
+        # ... (the strangler /{proxy+} route from Lab 4 — do not edit) ...
       Tags:
         Project: CloudAir
         Owner: !Ref UserId
 ```
+
+> **`DefaultAuthorizer` secures the *whole* facade.** It applies to every route on
+> the API — `GET /flights` **and** the `ANY /{proxy+}` strangler proxy. So after this
+> deploy, the legacy paths proxied to the monolith (e.g. `/bookings`) also require a
+> valid token. That's the point of Lab 7a — you're locking down the entire Cloud Air
+> entry point, not just the new microservice. (The proxy route survives this redeploy
+> because it lives in the HttpApi's `DefinitionBody`, not as a separate route resource.)
 
 **2. Add the two new Parameters:**
 

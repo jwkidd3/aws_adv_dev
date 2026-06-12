@@ -54,7 +54,7 @@ API Gateway HTTP API  (cloudair-$USER_ID-flights — prod stage)
           GET  /flights        ← still there but no longer reached by clients
 ```
 
-The `MonolithIntegration` and `MonolithCatchAllRoute` resources in `template.yaml` define this catch-all, but they were **not** created in Lab 4a — they sit behind a CloudFormation `Condition` (`HasMonolithUrl`) that is false while `MonolithUrl` is the placeholder `REPLACE_WITH_EB_CNAME`. This step supplies the real EB CNAME, which satisfies the condition, so the redeploy creates them.
+The `ANY /{proxy+}` catch-all already exists in the Flights HTTP API — it lives in the `FlightsApi.DefinitionBody` and was created back in Lab 4a, but pointing at the dummy `http://replace-me.invalid`. This step just redeploys with the **real** EB CNAME as `MonolithUrl`, so the same route now forwards to the live monolith. (It's in the managed definition deliberately, so it won't get dropped when Lab 7a regenerates the API to add the authorizer.)
 
 > **Anti-corruption layer:** the facade URL never exposes the EB CNAME to clients. When the monolith is eventually decommissioned (or replaced route by route), only the API Gateway integrations change — no client code needs updating.
 
@@ -70,13 +70,13 @@ source ~/.aws-adv-dev.env
 curl -s "$FLIGHTS_API_URL/flights" | python3 -m json.tool
 ```
 
-Now test a route that is **not** yet extracted. The catch-all route does not exist yet (it is created in Step 3), so API Gateway has nothing to match any path other than `/flights`:
+Now test a route that is **not** yet extracted. The `ANY /{proxy+}` catch-all already exists, but it still points at the dummy `http://replace-me.invalid` from Lab 4a, so the proxy can't reach a real backend:
 
 ```bash
 curl -s -o /dev/null -w "%{http_code}\n" "$FLIGHTS_API_URL/"
 ```
 
-You will see **`404`** (API Gateway `{"message":"Not Found"}`) — there is no `ANY /{proxy+}` route yet. After Step 3 supplies the real `MonolithUrl`, this same request will forward to the monolith and return its home-page JSON.
+You'll see a **`5xx`** (typically `503`) — API Gateway matched the catch-all route and tried to proxy to `replace-me.invalid`, which doesn't resolve. After Step 3 supplies the real `MonolithUrl`, this same request forwards to the monolith and returns its home-page JSON.
 
 ---
 
@@ -102,7 +102,7 @@ sam deploy \
     --no-confirm-changeset
 ```
 
-SAM computes a changeset — supplying a real `MonolithUrl` satisfies the `HasMonolithUrl` condition, so the changeset **creates** the `MonolithIntegration` and `MonolithCatchAllRoute` resources (they did not exist after Lab 4a). The Lambda function and its `/flights` routes are unchanged, so the changeset is small.
+SAM computes a changeset — the only change is the proxy integration's `uri`, which moves from the dummy host to your real EB CNAME (the route itself already exists). The Lambda function and its `/flights` routes are unchanged, so the changeset is small.
 
 > `--no-confirm-changeset` skips the interactive prompt. Appropriate here because you have already reviewed the changeset logic. In production pipelines, always review changesets before applying.
 
