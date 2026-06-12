@@ -34,6 +34,26 @@ patch_all()
 dynamodb = boto3.resource("dynamodb", region_name="us-east-1")
 TABLE_NAME = os.environ.get("BOOKINGS_TABLE", "Bookings-user1")
 
+# Static sample flights — identical to the Lab 4 app.py catalogue. The Bookings
+# table holds booking records, not FLIGHT# items, so the scan returns zero items
+# and this fallback is what callers actually see. Keeping it here means the
+# instrumented handler returns the SAME response as Lab 4 — X-Ray tracing is
+# *added*, not a behaviour change.
+SAMPLE_FLIGHTS = [
+    {"flightId": "CA101", "origin": "JFK", "destination": "LAX",
+     "departure": "2026-07-15T08:00:00Z", "arrival": "2026-07-15T11:30:00Z",
+     "aircraft": "Boeing 737", "seatsAvailable": 42, "priceUsd": 289.00},
+    {"flightId": "CA202", "origin": "LAX", "destination": "ORD",
+     "departure": "2026-07-15T13:00:00Z", "arrival": "2026-07-15T18:45:00Z",
+     "aircraft": "Airbus A320", "seatsAvailable": 18, "priceUsd": 199.00},
+    {"flightId": "CA303", "origin": "ORD", "destination": "JFK",
+     "departure": "2026-07-16T07:00:00Z", "arrival": "2026-07-16T10:15:00Z",
+     "aircraft": "Boeing 737", "seatsAvailable": 55, "priceUsd": 159.00},
+    {"flightId": "CA404", "origin": "JFK", "destination": "MIA",
+     "departure": "2026-07-16T15:30:00Z", "arrival": "2026-07-16T18:45:00Z",
+     "aircraft": "Airbus A319", "seatsAvailable": 7, "priceUsd": 129.00},
+]
+
 
 @xray_recorder.capture("get_flights")
 def _get_flights(table_name: str) -> list:
@@ -41,13 +61,17 @@ def _get_flights(table_name: str) -> list:
 
     The @capture decorator creates a named subsegment in the trace so you
     can see exactly how long the DynamoDB scan took independently of the
-    Lambda initialisation overhead.
+    Lambda initialisation overhead. The scan uses the same `pk` begins_with
+    FLIGHT# filter as the Lab 4 handler; since the Bookings table has no such
+    items it returns zero rows and we fall back to the SAMPLE_FLIGHTS catalogue
+    (so the response matches Lab 4 while the scan is still traced).
     """
     table = dynamodb.Table(table_name)
     response = table.scan(
-        FilterExpression=boto3.dynamodb.conditions.Attr("PK").begins_with("FLIGHT#")
+        FilterExpression=boto3.dynamodb.conditions.Attr("pk").begins_with("FLIGHT#")
     )
-    return response.get("Items", [])
+    items = response.get("Items", [])
+    return items if items else SAMPLE_FLIGHTS
 
 
 def handler(event: dict, context) -> dict:
