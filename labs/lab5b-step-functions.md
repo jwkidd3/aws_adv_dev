@@ -137,11 +137,16 @@ sam deploy \
   --stack-name cloudair-$USER_ID-saga \
   --parameter-overrides UserId=$USER_ID \
   --capabilities CAPABILITY_NAMED_IAM \
+  --resolve-s3 \
   --region $AWS_REGION \
   --no-confirm-changeset
 ```
 
-> SAM packages the Lambda code from `handlers.py`, uploads it to the SAM deployment bucket (created automatically on first deploy), and calls CloudFormation to create the stack.
+> `--resolve-s3` is required here: this is the **first** `sam deploy` in the `lab5/`
+> directory, so there is no `samconfig.toml` (Lab 4a created one in `lab4/`, not here)
+> and no artifact bucket yet. `--resolve-s3` creates/uses a managed default bucket for
+> the Lambda zip. Without it you get *"S3 Bucket not specified … use --resolve-s3."*
+> SAM then packages `handlers.py`, uploads it, and calls CloudFormation to create the stack.
 
 Wait for `Successfully created/updated stack`. Then capture the state machine ARN:
 
