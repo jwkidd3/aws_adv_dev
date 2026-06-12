@@ -241,15 +241,22 @@ CloudWatch log entry to its X-Ray trace using that ID.
 This section deletes every resource created during the three-day course. Run these
 commands in order; some depend on earlier ones completing first.
 
-### Delete SAM stacks
+### Delete the Flights stack
 
 ```bash
 source ~/.aws-adv-dev.env
 
-sam delete \
+# Use aws cloudformation delete-stack (not `sam delete`) so teardown does not
+# depend on samconfig.toml or the SAM-managed artifact bucket being present —
+# delete-stack reliably removes the Lambda, HTTP API, and Cognito authorizer.
+aws cloudformation delete-stack \
     --stack-name "cloudair-$USER_ID-flights" \
-    --no-prompts \
     --region $AWS_REGION
+
+aws cloudformation wait stack-delete-complete \
+    --stack-name "cloudair-$USER_ID-flights" \
+    --region $AWS_REGION
+echo "Flights stack deleted."
 ```
 
 ### Delete Cognito user pool
@@ -406,11 +413,16 @@ fi
 ```bash
 source ~/.aws-adv-dev.env
 
-# Delete the saga SAM stack — removes the state machine, all 4 Lambda stubs, and the IAM role
-sam delete \
+# Delete the saga stack — removes the state machine, all 4 Lambda stubs, and the
+# IAM role. delete-stack (not `sam delete`) for the same reliability reason as above.
+aws cloudformation delete-stack \
     --stack-name "cloudair-$USER_ID-saga" \
-    --no-prompts \
     --region $AWS_REGION
+
+aws cloudformation wait stack-delete-complete \
+    --stack-name "cloudair-$USER_ID-saga" \
+    --region $AWS_REGION
+echo "Saga stack deleted."
 ```
 
 ### Delete the CloudFormation base stack (Lab 2a) and Elastic Beanstalk environment (Lab 2b)
