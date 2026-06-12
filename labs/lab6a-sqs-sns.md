@@ -69,13 +69,11 @@ is received (but not deleted) three times is moved to the DLQ automatically.
 ```bash
 source ~/.aws-adv-dev.env
 
+# Keep the --attributes JSON on a SINGLE line. A multi-line string puts literal
+# newlines inside the JSON and the CLI rejects it with "Invalid control character".
 QUEUE_URL=$(aws sqs create-queue \
     --queue-name "cloudair-$USER_ID-bookings" \
-    --attributes "{
-        \"VisibilityTimeout\": \"30\",
-        \"MessageRetentionPeriod\": \"86400\",
-        \"RedrivePolicy\": \"{\\\"deadLetterTargetArn\\\":\\\"$DLQ_ARN\\\",\\\"maxReceiveCount\\\":\\\"3\\\"}\"
-    }" \
+    --attributes "{\"VisibilityTimeout\":\"30\",\"MessageRetentionPeriod\":\"86400\",\"RedrivePolicy\":\"{\\\"deadLetterTargetArn\\\":\\\"$DLQ_ARN\\\",\\\"maxReceiveCount\\\":\\\"3\\\"}\"}" \
     --query QueueUrl --output text \
     --region $AWS_REGION)
 
