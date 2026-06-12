@@ -65,40 +65,54 @@ rule on this bus (`…:rule/cloudair-$USER_ID/*`). (Using the bus ARN here is a
 common mistake — events would match the rule but every delivery to SQS would fail
 with `FailedInvocations` and the queue would stay empty.)
 
+As in Lab 6a, write the policy to a file and let `python3` build the
+`{"Policy": "<escaped>"}` wrapper — an inline multi-line `--attributes` string
+puts literal newlines inside the `Policy` value and the CLI rejects it with
+*"Invalid control character"*.
+
 ```bash
 source ~/.aws-adv-dev.env
 
+# Both statements in one document — unquoted heredoc so the ARNs expand.
+cat > /tmp/sqs-policy.json <<EOF
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "AllowSNS",
+      "Effect": "Allow",
+      "Principal": {"Service": "sns.amazonaws.com"},
+      "Action": "sqs:SendMessage",
+      "Resource": "$QUEUE_ARN",
+      "Condition": {"ArnEquals": {"aws:SourceArn": "$TOPIC_ARN"}}
+    },
+    {
+      "Sid": "AllowEventBridge",
+      "Effect": "Allow",
+      "Principal": {"Service": "events.amazonaws.com"},
+      "Action": "sqs:SendMessage",
+      "Resource": "$QUEUE_ARN",
+      "Condition": {"ArnLike": {"aws:SourceArn": "arn:aws:events:$AWS_REGION:$ACCT:rule/cloudair-$USER_ID/*"}}
+    }
+  ]
+}
+EOF
+
+python3 -c "import json;print(json.dumps({'Policy':open('/tmp/sqs-policy.json').read()}))" > /tmp/sqs-attributes.json
+
 aws sqs set-queue-attributes \
     --queue-url $QUEUE_URL \
-    --attributes "{
-        \"Policy\": \"{
-            \\\"Version\\\": \\\"2012-10-17\\\",
-            \\\"Statement\\\": [
-                {
-                    \\\"Sid\\\": \\\"AllowSNS\\\",
-                    \\\"Effect\\\": \\\"Allow\\\",
-                    \\\"Principal\\\": {\\\"Service\\\": \\\"sns.amazonaws.com\\\"},
-                    \\\"Action\\\": \\\"sqs:SendMessage\\\",
-                    \\\"Resource\\\": \\\"$QUEUE_ARN\\\",
-                    \\\"Condition\\\": {\\\"ArnEquals\\\": {\\\"aws:SourceArn\\\": \\\"$TOPIC_ARN\\\"}}
-                },
-                {
-                    \\\"Sid\\\": \\\"AllowEventBridge\\\",
-                    \\\"Effect\\\": \\\"Allow\\\",
-                    \\\"Principal\\\": {\\\"Service\\\": \\\"events.amazonaws.com\\\"},
-                    \\\"Action\\\": \\\"sqs:SendMessage\\\",
-                    \\\"Resource\\\": \\\"$QUEUE_ARN\\\",
-                    \\\"Condition\\\": {\\\"ArnLike\\\": {\\\"aws:SourceArn\\\": \\\"arn:aws:events:$AWS_REGION:$ACCT:rule/cloudair-$USER_ID/*\\\"}}
-                }
-            ]
-        }\"
-    }" \
+    --attributes file:///tmp/sqs-attributes.json \
     --region $AWS_REGION
+
+echo "Combined SNS + EventBridge queue policy applied."
 ```
 
 > This merges the SNS and EventBridge permissions into a single queue policy.
 > SQS allows only one policy document per queue — any `set-queue-attributes` call
-> with a `Policy` key **replaces** the existing policy entirely.
+> with a `Policy` key **replaces** the existing policy entirely, so both
+> statements must live in this one document (dropping the SNS statement here would
+> break the Lab 6a fan-out).
 
 ---
 
