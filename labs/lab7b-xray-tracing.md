@@ -285,6 +285,24 @@ aws events delete-rule \
     --event-bus-name "cloudair-$USER_ID" \
     --region $AWS_REGION
 
+# If you enabled Schema Discovery on the bus, EventBridge created a Schemas
+# *discoverer* and a service-managed rule named "Schemas-events-event-bus-…".
+# A managed rule cannot be removed with delete-rule and will block delete-event-bus.
+# Delete the discoverer first — that removes its managed rule automatically.
+BUS_ARN="arn:aws:events:$AWS_REGION:$ACCT:event-bus/cloudair-$USER_ID"
+for D in $(aws schemas list-discoverers --region $AWS_REGION \
+            --query "Discoverers[?SourceArn=='$BUS_ARN'].DiscovererId" --output text); do
+    aws schemas delete-discoverer --discoverer-id "$D" --region $AWS_REGION
+done
+
+# Belt-and-suspenders: force-delete any rule still attached to the bus
+# (handles the managed Schemas rule if the discoverer was already gone).
+for R in $(aws events list-rules --event-bus-name "cloudair-$USER_ID" \
+            --region $AWS_REGION --query "Rules[].Name" --output text); do
+    aws events delete-rule --name "$R" --event-bus-name "cloudair-$USER_ID" \
+        --force --region $AWS_REGION
+done
+
 aws events delete-archive \
     --archive-name "cloudair-$USER_ID-archive" \
     --region $AWS_REGION
@@ -293,6 +311,11 @@ aws events delete-event-bus \
     --name "cloudair-$USER_ID" \
     --region $AWS_REGION
 ```
+
+> **Why the extra steps?** Lab 6b's optional "Discover schemas" action turns on
+> Schema Discovery for the bus, which silently adds a managed rule. You can't
+> delete an event bus while any rule remains, and a *managed* rule rejects a plain
+> `delete-rule`. Deleting the discoverer (or `delete-rule --force`) clears it.
 
 ### Delete SQS queues and SNS topic
 

@@ -56,10 +56,19 @@ else echo "  - pool (absent)"; fi
 # --- EventBridge custom bus + rule + archive ---------------------------------
 section "EventBridge bus cloudair-$U"
 if have aws events describe-event-bus --name "cloudair-$U" --region "$REGION"; then
+  BUS_ARN="arn:aws:events:$REGION:$ACCT:event-bus/cloudair-$U"
+  # Schema Discovery (Lab 6b/7b) creates a discoverer + a service-MANAGED rule named
+  # "Schemas-events-event-bus-…". A managed rule blocks delete-event-bus and cannot be
+  # removed with a plain delete-rule. Delete the discoverer first — that removes its
+  # managed rule automatically — then force-delete any remaining rules.
+  for D in $(aws schemas list-discoverers --region "$REGION" \
+              --query "Discoverers[?SourceArn=='$BUS_ARN'].DiscovererId" --output text 2>/dev/null); do
+    run aws schemas delete-discoverer --discoverer-id "$D" --region "$REGION"
+  done
   for R in $(aws events list-rules --event-bus-name "cloudair-$U" --region "$REGION" --query "Rules[].Name" --output text 2>/dev/null); do
     TIDS=$(aws events list-targets-by-rule --rule "$R" --event-bus-name "cloudair-$U" --region "$REGION" --query "Targets[].Id" --output text 2>/dev/null)
-    [ -n "$TIDS" ] && run aws events remove-targets --rule "$R" --event-bus-name "cloudair-$U" --ids $TIDS --region "$REGION"
-    run aws events delete-rule --name "$R" --event-bus-name "cloudair-$U" --region "$REGION"
+    [ -n "$TIDS" ] && run aws events remove-targets --rule "$R" --event-bus-name "cloudair-$U" --ids $TIDS --force --region "$REGION"
+    run aws events delete-rule --name "$R" --event-bus-name "cloudair-$U" --force --region "$REGION"
   done
   run aws events delete-archive --archive-name "cloudair-$U-archive" --region "$REGION"
   run aws events delete-event-bus --name "cloudair-$U" --region "$REGION"
