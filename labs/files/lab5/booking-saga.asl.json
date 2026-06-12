@@ -20,6 +20,11 @@
       ],
       "Catch": [
         {
+          "ErrorEquals": ["SeatUnavailableError"],
+          "ResultPath": "$.error",
+          "Next": "BookingFailed"
+        },
+        {
           "ErrorEquals": ["States.ALL"],
           "ResultPath": "$.error",
           "Next": "BookingFailed"
@@ -45,6 +50,11 @@
       ],
       "Catch": [
         {
+          "ErrorEquals": ["PaymentDeclinedError"],
+          "ResultPath": "$.error",
+          "Next": "CancelReservation"
+        },
+        {
           "ErrorEquals": ["States.ALL"],
           "ResultPath": "$.error",
           "Next": "CancelReservation"
@@ -69,6 +79,11 @@
         }
       ],
       "Catch": [
+        {
+          "ErrorEquals": ["Exception"],
+          "ResultPath": "$.error",
+          "Next": "CancelReservation"
+        },
         {
           "ErrorEquals": ["States.ALL"],
           "ResultPath": "$.error",

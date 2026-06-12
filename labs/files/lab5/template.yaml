@@ -108,7 +108,10 @@ Resources:
                   },
                   "ResultPath": "$.reservationResult",
                   "Retry": [{"ErrorEquals": ["Lambda.ServiceException","Lambda.AWSLambdaException"], "IntervalSeconds": 2, "MaxAttempts": 2, "BackoffRate": 2}],
-                  "Catch": [{"ErrorEquals": ["States.ALL"], "ResultPath": "$.error", "Next": "BookingFailed"}],
+                  "Catch": [
+                    {"ErrorEquals": ["SeatUnavailableError"], "ResultPath": "$.error", "Next": "BookingFailed"},
+                    {"ErrorEquals": ["States.ALL"], "ResultPath": "$.error", "Next": "BookingFailed"}
+                  ],
                   "Next": "ChargePayment"
                 },
                 "ChargePayment": {
@@ -120,7 +123,10 @@ Resources:
                   },
                   "ResultPath": "$.paymentResult",
                   "Retry": [{"ErrorEquals": ["Lambda.ServiceException","Lambda.AWSLambdaException"], "IntervalSeconds": 2, "MaxAttempts": 2, "BackoffRate": 2}],
-                  "Catch": [{"ErrorEquals": ["States.ALL"], "ResultPath": "$.error", "Next": "CancelReservation"}],
+                  "Catch": [
+                    {"ErrorEquals": ["PaymentDeclinedError"], "ResultPath": "$.error", "Next": "CancelReservation"},
+                    {"ErrorEquals": ["States.ALL"], "ResultPath": "$.error", "Next": "CancelReservation"}
+                  ],
                   "Next": "ConfirmBooking"
                 },
                 "ConfirmBooking": {
@@ -132,7 +138,10 @@ Resources:
                   },
                   "ResultPath": "$.confirmResult",
                   "Retry": [{"ErrorEquals": ["Lambda.ServiceException","Lambda.AWSLambdaException"], "IntervalSeconds": 2, "MaxAttempts": 3, "BackoffRate": 2}],
-                  "Catch": [{"ErrorEquals": ["States.ALL"], "ResultPath": "$.error", "Next": "CancelReservation"}],
+                  "Catch": [
+                    {"ErrorEquals": ["Exception"], "ResultPath": "$.error", "Next": "CancelReservation"},
+                    {"ErrorEquals": ["States.ALL"], "ResultPath": "$.error", "Next": "CancelReservation"}
+                  ],
                   "Next": "BookingConfirmed"
                 },
                 "CancelReservation": {
