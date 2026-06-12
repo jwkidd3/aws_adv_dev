@@ -52,32 +52,34 @@ def _get_flights(table_name: str) -> list:
 
 def handler(event: dict, context) -> dict:
     """Lambda entry point for GET /flights."""
-    # Annotate the current segment — these values are indexed and filterable.
     user_id = (event.get("requestContext") or {}).get("identity", {}).get(
         "user", "anonymous"
     )
     method = (event.get("requestContext") or {}).get("http", {}).get("method", "GET")
 
-    xray_recorder.put_annotation("userId", user_id)
-    xray_recorder.put_annotation("httpMethod", method)
-    xray_recorder.put_annotation("tableName", TABLE_NAME)
+    # IMPORTANT: in Lambda the function runs inside an X-Ray *facade* segment that
+    # cannot be mutated — calling put_annotation/put_metadata on it raises
+    # FacadeSegmentMutationException. Annotations and metadata must target a
+    # SUBSEGMENT. Open one for the whole request; the values are then indexed and
+    # filterable in the X-Ray console (e.g. annotation.tableName = "Bookings-...").
+    with xray_recorder.in_subsegment("get_flights_request") as subsegment:
+        subsegment.put_annotation("userId", user_id)
+        subsegment.put_annotation("httpMethod", method)
+        subsegment.put_annotation("tableName", TABLE_NAME)
+        subsegment.put_metadata("rawEvent", event)  # metadata is NOT indexed
 
-    # Metadata is NOT indexed — attach the raw event for debugging.
-    xray_recorder.put_metadata("rawEvent", event)
-
-    try:
-        flights = _get_flights(TABLE_NAME)
-        xray_recorder.put_annotation("flightCount", len(flights))
-
-        return {
-            "statusCode": 200,
-            "headers": {"Content-Type": "application/json"},
-            "body": json.dumps({"flights": flights}),
-        }
-    except Exception as exc:  # noqa: BLE001
-        xray_recorder.put_annotation("error", str(exc)[:200])
-        return {
-            "statusCode": 500,
-            "headers": {"Content-Type": "application/json"},
-            "body": json.dumps({"error": "internal error"}),
-        }
+        try:
+            flights = _get_flights(TABLE_NAME)
+            subsegment.put_annotation("flightCount", len(flights))
+            return {
+                "statusCode": 200,
+                "headers": {"Content-Type": "application/json"},
+                "body": json.dumps({"flights": flights}),
+            }
+        except Exception as exc:  # noqa: BLE001
+            subsegment.put_annotation("error", str(exc)[:200])
+            return {
+                "statusCode": 500,
+                "headers": {"Content-Type": "application/json"},
+                "body": json.dumps({"error": "internal error"}),
+            }

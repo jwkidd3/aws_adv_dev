@@ -38,8 +38,10 @@ echo "USER_ID=$USER_ID  API_URL=$API_URL"
 source ~/.aws-adv-dev.env
 cd ~/environment/aws-adv-dev/lab4/src
 
-# Vendor the SDK into the deployment package directory
-pip install aws-xray-sdk -t .
+# Vendor the SDK into the deployment package directory.
+# Use pip3 — Cloud9 AL2023 has no unversioned `pip`. The -t (target) install
+# goes into ./ and is not PEP 668-managed, so no --break-system-packages needed.
+pip3 install aws-xray-sdk -t .
 ```
 
 Verify the SDK installed:
