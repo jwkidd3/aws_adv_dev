@@ -118,33 +118,54 @@ echo "Subscription: $SUBSCRIPTION_ARN"
 echo "export SUBSCRIPTION_ARN=$SUBSCRIPTION_ARN" >> ~/.aws-adv-dev.env
 ```
 
-SNS must be permitted to write to the SQS queue. Apply the resource-based policy:
+SNS must be permitted to write to the SQS queue. The SQS resource policy is a
+JSON string nested inside the `--attributes` JSON — escaping that inline is
+error-prone (a stray newline makes the CLI reject it with *"Invalid control
+character"*). Write each JSON document to a file instead and pass `file://`:
 
 ```bash
 source ~/.aws-adv-dev.env
 
+# 1. The IAM policy that allows SNS to send to this queue.
+#    The heredoc is UNQUOTED so $QUEUE_ARN and $TOPIC_ARN expand.
+cat > /tmp/sqs-policy.json <<EOF
+{
+  "Version": "2012-10-17",
+  "Statement": [{
+    "Effect": "Allow",
+    "Principal": {"Service": "sns.amazonaws.com"},
+    "Action": "sqs:SendMessage",
+    "Resource": "$QUEUE_ARN",
+    "Condition": {"ArnEquals": {"aws:SourceArn": "$TOPIC_ARN"}}
+  }]
+}
+EOF
+
+# 2. Wrap that policy (as a compact string) inside the SQS attributes document.
+#    python3 reads the policy file and emits {"Policy":"<escaped-json-string>"}
+#    so the nested escaping is handled for you — no manual backslashes.
+python3 -c "
+import json
+with open('/tmp/sqs-policy.json') as f:
+    policy = f.read()
+print(json.dumps({'Policy': policy}))
+" > /tmp/sqs-attributes.json
+
+# 3. Apply it.
 aws sqs set-queue-attributes \
     --queue-url $QUEUE_URL \
-    --attributes "{
-        \"Policy\": \"{
-            \\\"Version\\\": \\\"2012-10-17\\\",
-            \\\"Statement\\\": [{
-                \\\"Effect\\\": \\\"Allow\\\",
-                \\\"Principal\\\": {\\\"Service\\\": \\\"sns.amazonaws.com\\\"},
-                \\\"Action\\\": \\\"sqs:SendMessage\\\",
-                \\\"Resource\\\": \\\"$QUEUE_ARN\\\",
-                \\\"Condition\\\": {
-                    \\\"ArnEquals\\\": {\\\"aws:SourceArn\\\": \\\"$TOPIC_ARN\\\"}
-                }
-            }]
-        }\"
-    }" \
+    --attributes file:///tmp/sqs-attributes.json \
     --region $AWS_REGION
+
+echo "Queue policy applied."
 ```
 
-> SQS resource policies are JSON strings embedded inside the `--attributes`
-> JSON — the inner quotes need to be escaped. If the inline escaping is hard to
-> read, write the policy to a file and use `file://` instead.
+> **Why the failure?** `set-queue-attributes --attributes` expects a JSON object
+> whose `Policy` value is *itself* a JSON string. A multi-line, indented inline
+> string puts literal newlines inside that string value, and JSON forbids raw
+> control characters inside strings — hence `Invalid control character at line 2`.
+> Letting `python3 json.dumps` build the wrapper guarantees the inner policy is
+> correctly escaped onto a single line.
 
 ---
 
