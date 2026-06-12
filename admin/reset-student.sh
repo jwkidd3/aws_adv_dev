@@ -76,8 +76,15 @@ have aws sns get-topic-attributes --topic-arn "$TOPIC" --region "$REGION" \
   && run aws sns delete-topic --topic-arn "$TOPIC" --region "$REGION" \
   || echo "  - SNS topic (absent)"
 
-# --- Worker Lambda + its IAM role --------------------------------------------
-section "Worker Lambda + role"
+# --- Worker Lambda (+ event-source mappings) + its IAM role -------------------
+section "Worker Lambda + event-source mappings + role"
+# Delete the SQS event-source mapping(s) FIRST — they can outlive delete-function
+# and, because the queue/function names are reused, a stale Disabled mapping then
+# silently blocks create-event-source-mapping when the lab is re-provisioned.
+for ESM in $(aws lambda list-event-source-mappings --function-name "cloudair-$U-worker" \
+              --query "EventSourceMappings[].UUID" --output text --region "$REGION" 2>/dev/null); do
+  run aws lambda delete-event-source-mapping --uuid "$ESM" --region "$REGION"
+done
 have aws lambda get-function --function-name "cloudair-$U-worker" --region "$REGION" \
   && run aws lambda delete-function --function-name "cloudair-$U-worker" --region "$REGION" \
   || echo "  - worker fn (absent)"
